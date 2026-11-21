@@ -1,0 +1,1779 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import {
+  FlaskConical,
+  LayoutTemplate,
+  Braces,
+  ChartNoAxesCombined,
+  Play,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
+  Code2,
+  Lightbulb,
+  RotateCcw,
+  CheckCircle2,
+  Download,
+  Trash2,
+  X,
+  CheckCheck,
+  Monitor,
+  HelpCircle,
+  MessageCircle,
+  LoaderCircle,
+  Cloud,
+  CloudOff,
+  Search,
+  FolderOpen,
+  Sparkles,
+  BrainCircuit,
+  ShieldCheck,
+  Server,
+  ArrowUpRight,
+} from "lucide-react";
+import {
+  missions,
+  events,
+  emptyState,
+  initialProgress,
+  missionById,
+  type LabState,
+  type TrackId,
+  type Progress,
+} from "../lib/missions";
+import { runMission } from "../lib/runner";
+
+type View = "home" | "work" | "journal" | "compare" | "guide";
+const KEY = "haebogi-lab-v1";
+const icons = {
+  frontend: LayoutTemplate,
+  backend: Braces,
+  data: ChartNoAxesCombined,
+  ai: BrainCircuit,
+  security: ShieldCheck,
+  cloud: Server,
+};
+const groups = [
+  ["all", "전체"],
+  ["build", "서비스 만들기"],
+  ["insight", "AI · 데이터"],
+  ["ops", "안전한 운영"],
+] as const;
+const trackGroup: Record<TrackId, string> = {
+  frontend: "build",
+  backend: "build",
+  data: "insight",
+  ai: "insight",
+  security: "ops",
+  cloud: "ops",
+};
+function TrackIcon({ id, size = 22 }: { id: TrackId; size?: number }) {
+  const Icon = icons[id];
+  return <Icon size={size} strokeWidth={1.8} />;
+}
+function Mini({ id }: { id: TrackId }) {
+  return (
+    <div className={`task-art art-${id}`} aria-hidden="true">
+      {id === "frontend" ? (
+        <div className="art-window">
+          <div className="art-dots">
+            <i />
+            <i />
+            <i />
+          </div>
+          <div className="art-pills">
+            <b>전체</b>
+            <span>개발</span>
+            <span>진로</span>
+          </div>
+          <div className="art-event">
+            <span />
+            <div>
+              <b>나만의 웹페이지 만들기</b>
+              <small>신청 가능</small>
+            </div>
+            <Check size={16} />
+          </div>
+        </div>
+      ) : id === "backend" ? (
+        <div className="art-flow">
+          <span>신청 요청</span>
+          <div className="art-link" />
+          <div className="art-rule">
+            <Braces size={18} /> 중복 확인
+          </div>
+          <div className="art-link" />
+          <b>
+            <Check size={13} /> 신청 완료 <code>201</code>
+          </b>
+        </div>
+      ) : id === "data" ? (
+        <div className="art-chart">
+          <span>행사 참여율</span>
+          <div>
+            <i style={{ height: "45%" }} />
+            <i style={{ height: "85%" }} />
+            <i style={{ height: "62%" }} />
+          </div>
+          <small>개발　　 동아리　　 진로</small>
+        </div>
+      ) : id === "ai" ? (
+        <div className="art-retrieval">
+          <div>
+            <Search size={14} /> 신청 취소는 어떻게 하나요?
+          </div>
+          <ul>
+            <li>
+              <span>신청 · 취소 안내</span>
+              <b>2</b>
+            </li>
+            <li>
+              <span>신청 방법</span>
+              <b>1</b>
+            </li>
+            <li>
+              <span>행사 장소</span>
+              <b>0</b>
+            </li>
+          </ul>
+        </div>
+      ) : id === "security" ? (
+        <div className="art-access">
+          <ShieldCheck size={35} />
+          <div>
+            <span>내 신청 내역</span>
+            <b>
+              접근 허용 <Check size={13} />
+            </b>
+          </div>
+          <div>
+            <span>다른 사람의 내역</span>
+            <small>접근 차단</small>
+          </div>
+        </div>
+      ) : (
+        <div className="art-release">
+          <span>
+            <i /> 새 버전 관측 중
+          </span>
+          <div>
+            <small>오류율</small>
+            <b>3.0%</b>
+            <svg viewBox="0 0 100 30">
+              <polyline points="0,26 20,23 35,25 50,17 65,20 80,9 100,2" />
+            </svg>
+          </div>
+          <strong>
+            <RotateCcw size={14} /> 이전 버전으로 복구
+          </strong>
+        </div>
+      )}
+    </div>
+  );
+}
+function Rating({
+  label,
+  value,
+  onChange,
+  low,
+  high,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  low: string;
+  high: string;
+}) {
+  return (
+    <fieldset className="rating">
+      <legend>{label}</legend>
+      <div className="rating-buttons">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            type="button"
+            key={n}
+            aria-label={`${label} ${n}점`}
+            aria-pressed={value === n}
+            className={value === n ? "selected" : ""}
+            onClick={() => onChange(n)}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <div className="rating-labels">
+        <span>{low}</span>
+        <span>{high}</span>
+      </div>
+    </fieldset>
+  );
+}
+export default function Lab() {
+  const [view, setView] = useState<View>("home"),
+    [state, setState] = useState<LabState>(emptyState),
+    [ready, setReady] = useState(false),
+    [save, setSave] = useState("불러오는 중"),
+    [notice, setNotice] = useState("");
+  const [active, setActive] = useState<TrackId>("frontend"),
+    [modal, setModal] = useState<
+      "reflection" | "reset" | "delete" | "solution" | null
+    >(null);
+  const [experience, setExperience] = useState("기초 문법을 배웠어요"),
+    [purpose, setPurpose] = useState("어떤 분야가 재미있는지 알고 싶어요"),
+    [aiAvailable, setAiAvailable] = useState(false);
+  const [running, setRunning] = useState(false),
+    [tab, setTab] = useState<"preview" | "tests" | "data">("preview"),
+    [category, setCategory] = useState("개발"),
+    [availableOnly, setAvailableOnly] = useState(true);
+  const [group, setGroup] = useState("all"),
+    [coachTrace, setCoachTrace] = useState<string[]>([]),
+    [coachAction, setCoachAction] = useState(""),
+    [hint, setHint] = useState(""),
+    [hintSource, setHintSource] = useState(""),
+    [question, setQuestion] = useState(""),
+    [asking, setAsking] = useState(false);
+  const [reflection, setReflection] = useState({
+    interest: 0,
+    difficulty: 0,
+    again: 0,
+    note: "",
+    next: "",
+  });
+  const latest = useRef(state),
+    saveChain = useRef(Promise.resolve()),
+    saveEpoch = useRef(0),
+    coachEpoch = useRef(0),
+    toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  latest.current = state;
+  const mission = missionById(active)!,
+    progress = state.progress[active] ?? initialProgress(mission);
+  const completed = missions.filter((m) => state.progress[m.id]?.reflection);
+  function toast(message: string) {
+    setNotice(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setNotice(""), 4500);
+  }
+  function navigate(next: View) {
+    setView(next);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  useEffect(() => {
+    let alive = true;
+    const cached = () => {
+      try {
+        const x = JSON.parse(localStorage.getItem(KEY) ?? "null");
+        return x?.version === 1 && x.progress ? (x as LabState) : null;
+      } catch {
+        return null;
+      }
+    };
+    const local = cached();
+    if (local) setState(local);
+    fetch("/api/state", { signal: AbortSignal.timeout(6000) })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json() as Promise<{ state: LabState | null }>;
+      })
+      .then((data) => {
+        if (!alive) return;
+        const remote = data.state as LabState | null;
+        if (remote?.version === 1) {
+          const merged = { ...remote, progress: { ...remote.progress } };
+          for (const m of missions) {
+            const a = local?.progress[m.id],
+              b = remote.progress[m.id];
+            if (a && (!b || a.updatedAt > b.updatedAt))
+              merged.progress[m.id] = a;
+          }
+          if (local?.profile) merged.profile = local.profile;
+          setState(merged);
+        }
+        setSave("저장됨");
+      })
+      .catch(() => {
+        if (alive) setSave("기기에 저장");
+      })
+      .finally(() => {
+        if (alive) setReady(true);
+      });
+    fetch("/api/coach")
+      .then((r) => r.json() as Promise<{ available: boolean }>)
+      .then((d) => {
+        if (alive) setAiAvailable(!!d.available);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch {
+      setSave("저장 공간 부족");
+    }
+    setSave("저장 중");
+    const snapshot = state,
+      epoch = saveEpoch.current;
+    const timer = setTimeout(() => {
+      saveChain.current = saveChain.current
+        .catch(() => {})
+        .then(async () => {
+          if (epoch !== saveEpoch.current) return;
+          try {
+            const r = await fetch("/api/state", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(snapshot),
+              signal: AbortSignal.timeout(8000),
+            });
+            if (!r.ok) throw new Error();
+            if (latest.current === snapshot) setSave("저장됨");
+          } catch {
+            if (latest.current === snapshot) setSave("기기에 저장");
+          }
+        });
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [state, ready]);
+  useEffect(() => {
+    if (state.profile) {
+      setExperience(state.profile.experience);
+      setPurpose(state.profile.purpose);
+    }
+  }, [state.profile]);
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !asking) setModal(null);
+    };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [asking]);
+  useEffect(() => {
+    if (!modal) return;
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const backgrounds = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "header.site-header,main,footer.site-footer",
+      ),
+    );
+    backgrounds.forEach((el) => {
+      el.inert = true;
+    });
+    const focusable = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled),input,select,textarea,[tabindex="0"]',
+        ) ?? [],
+      );
+    focusable()[0]?.focus();
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const nodes = focusable(),
+        first = nodes[0],
+        last = nodes.at(-1);
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", trap);
+    return () => {
+      document.body.style.overflow = overflow;
+      backgrounds.forEach((el) => {
+        el.inert = false;
+      });
+      document.removeEventListener("keydown", trap);
+      previous?.focus();
+    };
+  }, [modal]);
+  function patch(id: TrackId, value: Partial<Progress>) {
+    setState((s) => ({
+      ...s,
+      progress: {
+        ...s.progress,
+        [id]: {
+          ...(s.progress[id] ?? initialProgress(missionById(id)!)),
+          ...value,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    }));
+  }
+  function start(id: TrackId) {
+    if (!ready) return;
+    if (!state.profile)
+      setState((s) => ({
+        ...s,
+        profile: { experience, purpose, aiConsent: false },
+      }));
+    openWork(id);
+  }
+  function openWork(id: TrackId) {
+    coachEpoch.current += 1;
+    setAsking(false);
+    setActive(id);
+    setHint("");
+    setQuestion("");
+    setHintSource("");
+    setCoachTrace([]);
+    setCoachAction("");
+    setCategory("개발");
+    setAvailableOnly(true);
+    setTab("preview");
+    if (!state.progress[id]) patch(id, initialProgress(missionById(id)!));
+    setModal(null);
+    navigate("work");
+  }
+  async function execute() {
+    if (running) return;
+    setRunning(true);
+    const code = progress.code;
+    const result = await runMission(
+      mission,
+      code,
+      active === "frontend" ? [events, category, availableOnly] : undefined,
+    );
+    patch(active, { result, runs: progress.runs + 1 });
+    setRunning(false);
+    if (result.error) setTab("tests");
+    else if (result.tests.every((t) => t.passed))
+      toast(
+        "모든 확인 항목을 통과했어요. 어떤 과정이 재미있었는지 기록해보세요.",
+      );
+  }
+  function basicHint() {
+    const level = Math.min(progress.hintLevel, 2);
+    setHint(mission.hints[level]);
+    setHintSource("기본 힌트");
+    setCoachTrace([]);
+    setCoachAction("");
+    patch(active, { hintLevel: Math.min(progress.hintLevel + 1, 3) });
+  }
+  async function ask() {
+    if (asking || !question.trim()) return;
+    if (!state.profile?.aiConsent) {
+      toast(
+        "맞춤 힌트는 AI 사용 동의 후 사용할 수 있어요. 준비된 힌트는 바로 볼 수 있어요.",
+      );
+      return;
+    }
+    const requestEpoch = ++coachEpoch.current;
+    setAsking(true);
+    setCoachTrace([]);
+    setCoachAction("");
+    try {
+      await saveChain.current;
+      const saved = await fetch("/api/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(latest.current),
+      });
+      if (!saved.ok) throw new Error();
+      const r = await fetch("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          track: active,
+          code: progress.code,
+          level: Math.min(progress.hintLevel, 2),
+          question,
+          tests: (progress.result?.tests ?? []).map((t) => ({
+            label: t.label,
+            passed: t.passed,
+            error: t.error,
+          })),
+        }),
+      });
+      const d = (await r.json()) as {
+        message: string;
+        source: string;
+        notice?: string;
+        trace?: string[];
+        nextAction?: string;
+      };
+      if (requestEpoch !== coachEpoch.current) return;
+      if (!r.ok || typeof d.message !== "string") throw new Error();
+      setHint(d.message);
+      setCoachTrace(d.trace ?? []);
+      setCoachAction(d.nextAction ?? "");
+      setHintSource(d.source === "ai" ? "AI 코치" : "기본 힌트");
+      if (d.notice) toast(d.notice);
+      setQuestion("");
+      patch(active, { hintLevel: Math.min(progress.hintLevel + 1, 3) });
+    } catch {
+      if (requestEpoch !== coachEpoch.current) return;
+      setHint(mission.hints[Math.min(progress.hintLevel, 2)]);
+      setHintSource("기본 힌트");
+      toast("연결이 늦어 준비된 힌트를 보여드려요.");
+    } finally {
+      if (requestEpoch === coachEpoch.current) setAsking(false);
+    }
+  }
+  function openReflection() {
+    const r = progress.reflection;
+    setReflection(
+      r
+        ? {
+            interest: r.interest,
+            difficulty: r.difficulty,
+            again: r.again,
+            note: r.note,
+            next: r.next,
+          }
+        : { interest: 0, difficulty: 0, again: 0, note: "", next: "" },
+    );
+    setModal("reflection");
+  }
+  function finishReflection() {
+    if (
+      !reflection.interest ||
+      !reflection.difficulty ||
+      !reflection.again ||
+      !reflection.note.trim() ||
+      !reflection.next
+    )
+      return;
+    patch(active, {
+      reflection: { ...reflection, endedAt: new Date().toISOString() },
+    });
+    setModal(null);
+    navigate("journal");
+    toast("체험과 회고를 기록했어요. 다른 작업도 비교해보세요.");
+  }
+  function download() {
+    const blob = new Blob([JSON.stringify(state, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "haebogi-records.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  async function erase() {
+    try {
+      saveEpoch.current += 1;
+      await saveChain.current;
+      const r = await fetch("/api/state", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!r.ok) throw new Error();
+      localStorage.removeItem(KEY);
+      setState(emptyState());
+      setModal(null);
+      navigate("home");
+      toast("나의 체험 기록을 삭제했어요.");
+    } catch {
+      toast("서버 기록을 삭제하지 못했어요. 연결 후 다시 시도해주세요.");
+    }
+  }
+  const passed = progress.result?.tests.filter((t) => t.passed).length ?? 0;
+  const hasAttempt = progress.runs > 0 && progress.code !== mission.starter;
+  return (
+    <div className="app-shell">
+      <header className="site-header">
+        <div className="nav-inner">
+          <button
+            className="brand"
+            onClick={() => navigate("home")}
+            aria-label="해보기 홈"
+          >
+            <span className="brand-mark">
+              <FlaskConical size={23} />
+            </span>
+            <span>
+              해보기<span className="brand-dot">.</span>
+            </span>
+          </button>
+          <nav aria-label="주 메뉴">
+            {(
+              [
+                ["home", "체험실"],
+                ["journal", "나의 기록"],
+                ["compare", "비교하기"],
+              ] as [View, string][]
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                className={
+                  view === id || (view === "work" && id === "home")
+                    ? "active"
+                    : ""
+                }
+                onClick={() => navigate(id)}
+              >
+                {label}
+                {id === "journal" && completed.length > 0 && (
+                  <span className="nav-count">{completed.length}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+          <div className="nav-end">
+            <button className="guide-link" onClick={() => navigate("guide")}>
+              <HelpCircle size={17} /> 도움말
+            </button>
+            <span className="save-state" aria-live="polite">
+              {save === "기기에 저장" ? (
+                <CloudOff size={15} />
+              ) : (
+                <Cloud size={15} />
+              )}
+              <span>{save}</span>
+            </span>
+          </div>
+        </div>
+      </header>
+      {!ready && (
+        <div className="loading-strip" role="status">
+          체험 기록을 불러오고 있어요.
+        </div>
+      )}
+      {view === "home" && (
+        <main className="home wrap">
+          <section className="welcome">
+            <div>
+              <p className="welcome-kicker">개발 직무 맛보기</p>
+              <h1>
+                어떤 일이 나와 맞을까?
+                <br />
+                일단, 해보기.
+              </h1>
+              <p className="welcome-description">
+                설치 없이 작은 업무 하나로 시작해요.
+              </p>
+              <button
+                className="btn primary"
+                disabled={!ready}
+                onClick={() => start("frontend")}
+              >
+                처음이라면 화면 만들기 <ArrowUpRight size={18} />
+              </button>
+            </div>
+            <button
+              className="featured-task"
+              disabled={!ready}
+              onClick={() => start("ai")}
+            >
+              <div className="featured-label">
+                <BrainCircuit size={18} /> 오늘의 다른 선택 <span>20분</span>
+              </div>
+              <Mini id="ai" />
+              <div className="featured-bottom">
+                <div>
+                  <small>AI 엔지니어</small>
+                  <strong>AI가 참고할 문서 골라보기</strong>
+                </div>
+                <ArrowUpRight size={23} />
+              </div>
+            </button>
+          </section>
+          <section id="tracks" className="catalog">
+            <div className="catalog-heading">
+              <h2>해보고 싶은 일</h2>
+              <span>{missions.length}개 체험</span>
+            </div>
+            <div
+              className="catalog-filters"
+              role="group"
+              aria-label="직무 분야"
+            >
+              {groups.map(([id, label]) => (
+                <button
+                  key={id}
+                  aria-pressed={group === id}
+                  className={group === id ? "selected" : ""}
+                  onClick={() => setGroup(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="catalog-grid">
+              {missions
+                .filter((m) => group === "all" || trackGroup[m.id] === group)
+                .map((m) => {
+                  const p = state.progress[m.id];
+                  return (
+                    <article className={`job-card ${m.color}`} key={m.id}>
+                      <button
+                        className="job-open"
+                        disabled={!ready}
+                        onClick={() => start(m.id)}
+                        aria-label={`${m.title} ${p ? "이어서 해보기" : "체험 시작"}`}
+                      >
+                        <div className="job-art">
+                          <Mini id={m.id} />
+                          {p && (
+                            <span className="job-status">
+                              {p.reflection ? (
+                                <>
+                                  <Check size={12} /> 완료
+                                </>
+                              ) : (
+                                "진행 중"
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        <div className="job-info">
+                          <div className="job-role">
+                            <TrackIcon id={m.id} size={17} />
+                            {m.title}
+                            <span>{m.time}</span>
+                          </div>
+                          <h3>{m.action}</h3>
+                          <p>{m.description}</p>
+                          <div className="job-bottom">
+                            <span>{m.concepts.join(" · ")}</span>
+                            <ArrowUpRight size={18} />
+                          </div>
+                        </div>
+                      </button>
+                    </article>
+                  );
+                })}
+            </div>
+          </section>
+          {completed.length > 0 && (
+            <button
+              className="continue-strip"
+              onClick={() => navigate("compare")}
+            >
+              <BookOpen size={20} />
+              <span>지금까지 {completed.length}개의 체험을 기록했어요.</span>
+              <strong>나란히 비교하기</strong>
+              <ChevronRight size={18} />
+            </button>
+          )}
+          <footer className="site-footer">
+            <span>
+              해보기 <small>직무 선택 전, 작은 경험 하나.</small>
+            </span>
+            <button onClick={() => navigate("guide")}>
+              이용 · 데이터 안내
+            </button>
+          </footer>
+        </main>
+      )}
+      {view === "work" && (
+        <main className="work wrap">
+          <div className="work-heading">
+            <div>
+              <button className="back-link" onClick={() => navigate("home")}>
+                <ChevronLeft size={16} /> 체험실로
+              </button>
+              <h1>
+                <span className={`work-icon ${mission.color}`}>
+                  <TrackIcon id={active} />
+                </span>
+                {mission.action}
+              </h1>
+              <p>
+                {mission.title} 체험 <span>·</span> JavaScript <span>·</span> 약{" "}
+                {mission.time}
+              </p>
+            </div>
+            <button
+              className="btn primary"
+              disabled={!hasAttempt || running}
+              onClick={openReflection}
+            >
+              <CheckCheck size={18} /> 체험 기록
+            </button>
+          </div>
+          <ol className="work-journey" aria-label="체험 순서">
+            <li className={progress.runs ? "done" : "current"}>
+              <span>1</span> 코드 바꾸기
+            </li>
+            <li className={progress.runs ? "current" : ""}>
+              <span>2</span> 실행 · 결과 확인
+            </li>
+            <li className={progress.reflection ? "done" : ""}>
+              <span>3</span> 체험 기록
+            </li>
+          </ol>
+          <div className="work-grid">
+            <aside className="mission-brief">
+              <div className="brief-label">
+                <BookOpen size={18} /> 해볼 일
+              </div>
+              <p>{mission.brief}</p>
+              <h2>완성할 조건</h2>
+              <ol className="checklist">
+                {mission.steps.map((step, i) => (
+                  <li key={step}>
+                    <span>{i + 1}</span>
+                    <p>{step}</p>
+                  </li>
+                ))}
+              </ol>
+              <details className="primer">
+                <summary>문법이 가물가물한가요?</summary>
+                <p>작은 예제로 필요한 문법부터 확인해보세요.</p>
+                <pre>
+                  {active === "frontend"
+                    ? "const numbers = [1, 2, 3];\nconst bigger = numbers.filter(n => n > 1);\n// [2, 3]"
+                    : active === "backend"
+                      ? "if (names.includes('mina')) {\n  return { accepted: false };\n}\n// 배열에 값이 있는지 확인해요."
+                      : active === "security"
+                        ? "if (!user) return 401;\nconst isOwner = user.id === record.ownerId;"
+                        : active === "cloud"
+                          ? "const errorRate = errors / requests;\n// 2%는 0.02예요.\nif (slow || failing) return 'rollback';"
+                          : "const unique = new Set();\nunique.add('개발:a');\nunique.has('개발:a'); // true"}
+                </pre>
+              </details>
+              <div className="hint-section">
+                <h2>
+                  <Lightbulb size={18} /> 함께 풀기
+                </h2>
+                <p>실행하고, 막힌 부분만 물어보세요.</p>
+                <button className="btn soft full" onClick={basicHint}>
+                  힌트 {Math.min(progress.hintLevel + 1, 3)} 보기
+                </button>
+                {asking && (
+                  <div className="coach-working" role="status">
+                    <LoaderCircle size={16} className="spin" /> 코드와 실행
+                    결과를 살펴보는 중
+                  </div>
+                )}
+                {hint && (
+                  <div className="hint-answer" role="status">
+                    <span>{hintSource}</span>
+                    {coachTrace.length > 0 && (
+                      <ol className="coach-trace">
+                        {coachTrace.map((step, i) => (
+                          <li key={i}>
+                            <Check size={12} />
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                    <p>{hint}</p>
+                    {coachAction && (
+                      <button
+                        className="coach-next"
+                        disabled={running}
+                        onClick={() =>
+                          coachAction === "inspect"
+                            ? setTab("tests")
+                            : execute()
+                        }
+                      >
+                        {coachAction === "inspect"
+                          ? "확인 항목 살펴보기"
+                          : "수정한 코드 실행하기"}
+                        <ChevronRight size={14} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                <details className="ai-details">
+                  <summary>
+                    <Sparkles size={15} /> AI 코치에게 질문
+                  </summary>
+                  {!aiAvailable && (
+                    <p className="muted">
+                      AI 연결 전이에요. 기본 힌트를 이용해주세요.
+                    </p>
+                  )}
+                  {!state.profile?.aiConsent && (
+                    <label className="consent-inline">
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        onChange={() =>
+                          setState((s) => ({
+                            ...s,
+                            profile: { experience, purpose, aiConsent: true },
+                          }))
+                        }
+                      />{" "}
+                      코드·질문·실행 결과를 OpenAI에 보내는 데 동의해요.
+                      개인정보와 비밀키는 제외해주세요.
+                    </label>
+                  )}
+                  <textarea
+                    aria-label="코드에 대한 질문"
+                    value={question}
+                    maxLength={600}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder="어떤 조건부터 확인하면 좋을까요?"
+                    rows={3}
+                  />
+                  <button
+                    className="btn soft full"
+                    onClick={ask}
+                    disabled={
+                      asking ||
+                      !question.trim() ||
+                      !aiAvailable ||
+                      !state.profile?.aiConsent
+                    }
+                  >
+                    {asking ? (
+                      <LoaderCircle className="spin" size={16} />
+                    ) : (
+                      <MessageCircle size={16} />
+                    )}{" "}
+                    맞춤 힌트 받기
+                  </button>
+                </details>
+              </div>
+              <button
+                className="solution-link"
+                onClick={() => setModal("solution")}
+              >
+                참고 풀이 살펴보기
+              </button>
+            </aside>
+            <section className="workspace">
+              <div className="editor-head">
+                <span>
+                  <Code2 size={16} />
+                  {mission.fn}.js
+                </span>
+                <div>
+                  <button
+                    title="코드 다운로드"
+                    aria-label="코드 다운로드"
+                    onClick={() => {
+                      const u = URL.createObjectURL(
+                        new Blob([progress.code], { type: "text/javascript" }),
+                      );
+                      const a = document.createElement("a");
+                      a.href = u;
+                      a.download = active + ".js";
+                      a.click();
+                      URL.revokeObjectURL(u);
+                    }}
+                  >
+                    <Download size={16} />
+                  </button>
+                  <button
+                    title="처음 코드로 되돌리기"
+                    aria-label="처음 코드로 되돌리기"
+                    onClick={() => setModal("reset")}
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                </div>
+              </div>
+              <div className="code-area">
+                <div aria-hidden="true" className="line-numbers">
+                  {progress.code.split("\n").map((_, i) => (
+                    <span key={i}>{i + 1}</span>
+                  ))}
+                </div>
+                <textarea
+                  aria-label="미션 코드 편집기"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  value={progress.code}
+                  disabled={running}
+                  maxLength={20000}
+                  onChange={(e) =>
+                    patch(active, { code: e.target.value, result: undefined })
+                  }
+                  onKeyDown={(e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      execute();
+                    }
+                  }}
+                />
+              </div>
+              <div className="editor-bottom">
+                <span>
+                  코드를 수정하고 실행해보세요 <kbd>⌘ / Ctrl + Enter</kbd>
+                </span>
+                <button
+                  className="btn primary compact"
+                  disabled={running}
+                  onClick={execute}
+                >
+                  {running ? (
+                    <LoaderCircle size={15} className="spin" />
+                  ) : (
+                    <Play size={15} fill="currentColor" />
+                  )}
+                  {running ? "실행 중" : "코드 실행"}
+                </button>
+              </div>
+              <div
+                className="output-head"
+                role="tablist"
+                aria-label="실행 결과"
+              >
+                {(
+                  [
+                    ["preview", "미리보기"],
+                    [
+                      "tests",
+                      `확인 항목${progress.result ? " " + passed + "/5" : ""}`,
+                    ],
+                    ["data", "입력 데이터"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    role="tab"
+                    aria-selected={tab === id}
+                    className={tab === id ? "active" : ""}
+                    onClick={() => setTab(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="output-panel">
+                {tab === "preview" && (
+                  <>
+                    {active === "frontend" && (
+                      <div className="preview-filters">
+                        <label>
+                          카테고리
+                          <select
+                            value={category}
+                            onChange={(e) => {
+                              setCategory(e.target.value);
+                              patch(active, { result: undefined });
+                            }}
+                          >
+                            {["전체", "개발", "진로", "동아리"].map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="check-label">
+                          <input
+                            type="checkbox"
+                            checked={availableOnly}
+                            onChange={(e) => {
+                              setAvailableOnly(e.target.checked);
+                              patch(active, { result: undefined });
+                            }}
+                          />
+                          신청 가능한 행사만
+                        </label>
+                      </div>
+                    )}
+                    {!progress.result ? (
+                      <div className="output-empty">
+                        <Monitor size={30} />
+                        <h3>나의 코드가 만드는 결과</h3>
+                        <p>
+                          {active === "frontend"
+                            ? "필터를 고른 뒤 코드를 실행하면 행사 목록이 바뀌어요."
+                            : "코드를 실행하면 실제 반환값을 여기에서 확인할 수 있어요."}
+                        </p>
+                      </div>
+                    ) : progress.result.error ? (
+                      <div className="error-message">
+                        {progress.result.error}
+                      </div>
+                    ) : active === "frontend" ? (
+                      <div className="events-preview">
+                        {Array.isArray(progress.result.preview) ? (
+                          progress.result.preview.length ? (
+                            progress.result.preview.map(
+                              (item: unknown, i: number) => {
+                                const event = item as (typeof events)[number];
+                                return (
+                                  <div className="preview-event" key={i}>
+                                    <div
+                                      className={`event-symbol ${i % 2 ? "teal" : "blue"}`}
+                                    >
+                                      <Code2 size={21} />
+                                    </div>
+                                    <div>
+                                      <b>
+                                        {typeof event?.title === "string"
+                                          ? event.title
+                                          : "제목 없음"}
+                                      </b>
+                                      <small>
+                                        {String(event?.category ?? "")} ·{" "}
+                                        {String(event?.registered ?? "")} /{" "}
+                                        {String(event?.capacity ?? "")}명
+                                      </small>
+                                    </div>
+                                    <span>
+                                      {Number(event?.registered) <
+                                      Number(event?.capacity)
+                                        ? "신청 가능"
+                                        : "마감"}
+                                    </span>
+                                  </div>
+                                );
+                              },
+                            )
+                          ) : (
+                            <div className="output-empty">
+                              <Search size={25} />
+                              <p>조건에 맞는 행사가 없어요.</p>
+                            </div>
+                          )
+                        ) : (
+                          <p className="error-message">
+                            행사 목록은 배열로 반환해주세요.
+                          </p>
+                        )}
+                      </div>
+                    ) : active === "data" &&
+                      Array.isArray(progress.result.preview) &&
+                      progress.result.preview.length ? (
+                      <div className="data-result">
+                        <h3>카테고리별 참여율</h3>
+                        {progress.result.preview.map(
+                          (item: unknown, i: number) => {
+                            const x = item as {
+                              category?: string;
+                              rate?: number;
+                              total?: number;
+                              attended?: number;
+                            };
+                            const rate = Number(x?.rate);
+                            return (
+                              <div key={i}>
+                                <span>{String(x?.category ?? "")}</span>
+                                <div className="bar-track">
+                                  <i
+                                    style={{
+                                      width: `${Number.isFinite(rate) ? Math.min(100, Math.max(0, rate)) : 0}%`,
+                                    }}
+                                  />
+                                </div>
+                                <b>{Number.isFinite(rate) ? rate : "?"}%</b>
+                                <small>
+                                  {String(x?.attended ?? "?")} /{" "}
+                                  {String(x?.total ?? "?")}명
+                                </small>
+                              </div>
+                            );
+                          },
+                        )}
+                        <p>표본 크기와 집계 기준을 함께 보고 해석해보세요.</p>
+                      </div>
+                    ) : (
+                      <div className="json-preview">
+                        <span>나의 함수 반환값</span>
+                        <pre>
+                          {JSON.stringify(progress.result.preview, null, 2) ??
+                            "undefined"}
+                        </pre>
+                        {active === "backend" && (
+                          <small>
+                            예시 요청: 2명 정원에 2명이 신청한 행사에 새
+                            사용자가 신청해요.
+                          </small>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+                {tab === "tests" &&
+                  (!progress.result ? (
+                    <div className="output-empty">
+                      <CheckCircle2 size={30} />
+                      <p>코드를 실행하면 다섯 가지 상황을 확인해요.</p>
+                    </div>
+                  ) : progress.result.error ? (
+                    <div className="error-message">{progress.result.error}</div>
+                  ) : (
+                    <div className="tests-list">
+                      {progress.result.tests.map((test, i) => (
+                        <details
+                          key={i}
+                          className={test.passed ? "pass" : "fail"}
+                        >
+                          <summary>
+                            {test.passed ? (
+                              <CheckCircle2 size={17} />
+                            ) : (
+                              <HelpCircle size={17} />
+                            )}
+                            <span>{test.label}</span>
+                            <small>{test.passed ? "통과" : "확인 필요"}</small>
+                            <ChevronRight size={15} />
+                          </summary>
+                          <p>{test.why}</p>
+                          {test.error ? (
+                            <pre>{test.error}</pre>
+                          ) : (
+                            <>
+                              <span className="test-caption">기대 결과</span>
+                              <pre>
+                                {JSON.stringify(test.expected, null, 2)}
+                              </pre>
+                              <span className="test-caption">나의 결과</span>
+                              <pre>
+                                {JSON.stringify(test.actual, null, 2) ??
+                                  "undefined"}
+                              </pre>
+                            </>
+                          )}
+                        </details>
+                      ))}
+                    </div>
+                  ))}
+                {tab === "data" && (
+                  <div className="json-preview">
+                    <span>미션에 제공하는 예시 데이터</span>
+                    <pre>
+                      {JSON.stringify(
+                        Object.fromEntries(
+                          mission.previewArgs.map((value, i) => [
+                            ["frontend", "data"].includes(active)
+                              ? active === "frontend"
+                                ? ["events", "category", "availableOnly"][i]
+                                : "rows"
+                              : "입력 " + (i + 1),
+                            value,
+                          ]),
+                        ),
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </div>
+                )}
+              </div>
+              <div className="workspace-note">
+                <Check size={14} /> 직접 수정하고 실행했다면 기록할 수 있어요.
+              </div>
+            </section>
+          </div>
+        </main>
+      )}
+      {view === "journal" && (
+        <main className="wrap records-page">
+          <div className="page-intro">
+            <span className="context-tag">
+              <BookOpen size={16} /> 나의 기록
+            </span>
+            <h1>나의 체험 기록</h1>
+            <p>재미있었던 일과 다음에 해볼 일.</p>
+          </div>
+          {!completed.length ? (
+            <div className="empty-state">
+              <FolderOpen size={42} />
+              <h2>첫 경험을 기다리고 있어요.</h2>
+              <p>
+                코드를 수정하고 실행한 뒤 회고를 남기면
+                <br />
+                나만의 경험이 이곳에 쌓여요.
+              </p>
+              <button className="btn primary" onClick={() => navigate("home")}>
+                체험 고르기
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="record-grid">
+                {completed.map((m) => {
+                  const p = state.progress[m.id]!,
+                    r = p.reflection!;
+                  return (
+                    <article className="record-card" key={m.id}>
+                      <div className={`record-icon ${m.color}`}>
+                        <TrackIcon id={m.id} />
+                      </div>
+                      <div className="record-top">
+                        <span>{m.title}</span>
+                        <small>
+                          {new Date(r.endedAt).toLocaleDateString("ko-KR")}
+                        </small>
+                      </div>
+                      <h2>{m.action}</h2>
+                      <div className="score-summary">
+                        <span>
+                          흥미 <b>{r.interest}/5</b>
+                        </span>
+                        <span>
+                          체감 난이도 <b>{r.difficulty}/5</b>
+                        </span>
+                        <span>
+                          다시 해보고 싶음 <b>{r.again}/5</b>
+                        </span>
+                      </div>
+                      <p className="record-note">{r.note}</p>
+                      <div className="next-action">
+                        <span>다음에 해볼 일</span>
+                        <b>{r.next}</b>
+                      </div>
+                      <div className="record-foot">
+                        <small>
+                          실행 {p.runs}회 · 힌트 {p.hintLevel}단계
+                          {p.usedSolution ? " · 참고 풀이 열람" : ""}
+                        </small>
+                        <button
+                          className="text-button"
+                          onClick={() => openWork(m.id)}
+                        >
+                          다시 열기
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <button
+                className="btn primary"
+                onClick={() => navigate("compare")}
+              >
+                체험 비교하기
+              </button>
+            </>
+          )}
+          <section className="record-settings">
+            <div>
+              <h2>체험 기록 관리</h2>
+              <p>
+                서버 기록은 마지막 저장 후 30일이 지나면 다음 접속이나 저장 시
+                삭제돼요. 기기 초안은 직접 지울 수 있어요.
+              </p>
+            </div>
+            <div>
+              <button className="btn secondary compact" onClick={download}>
+                <Download size={15} /> 기록 내려받기
+              </button>
+              <button
+                className="danger-link"
+                onClick={() => setModal("delete")}
+              >
+                <Trash2 size={15} /> 전체 기록 삭제
+              </button>
+            </div>
+          </section>
+        </main>
+      )}
+      {view === "compare" && (
+        <main className="wrap compare-page">
+          <div className="page-intro">
+            <span className="context-tag">
+              <ChartNoAxesCombined size={16} /> 비교하기
+            </span>
+            <h1>나에게 남은 경험을 나란히.</h1>
+            <p>성적보다 과정에서 느낀 흥미를 살펴보세요.</p>
+          </div>
+          {completed.length < 2 ? (
+            <div className="empty-state">
+              <ChartNoAxesCombined size={42} />
+              <h2>
+                {completed.length
+                  ? "한 가지 작업을 더 경험해볼까요?"
+                  : "서로 다른 작업을 비교해보세요."}
+              </h2>
+              <p>
+                두 가지 체험에 회고를 남기면
+                <br />
+                흥미와 어려움을 나란히 볼 수 있어요.
+              </p>
+              <button className="btn primary" onClick={() => navigate("home")}>
+                다른 체험 고르기
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="compare-table-wrap">
+                <table className="compare-table">
+                  <thead>
+                    <tr>
+                      <th>나의 회고</th>
+                      {completed.map((m) => (
+                        <th key={m.id}>
+                          <span className={`compare-icon ${m.color}`}>
+                            <TrackIcon id={m.id} />
+                          </span>
+                          {m.title}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(
+                      [
+                        ["interest", "흥미"],
+                        ["difficulty", "체감 난이도"],
+                        ["again", "다시 해보고 싶은 정도"],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <tr key={key}>
+                        <th>{label}</th>
+                        {completed.map((m) => (
+                          <td key={m.id}>
+                            <span className="score-dots">
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <i
+                                  key={n}
+                                  className={
+                                    state.progress[m.id]!.reflection![key] >= n
+                                      ? m.color
+                                      : ""
+                                  }
+                                />
+                              ))}
+                            </span>
+                            <strong>
+                              {state.progress[m.id]!.reflection![key]} / 5
+                            </strong>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                    <tr>
+                      <th>직접 남긴 생각</th>
+                      {completed.map((m) => (
+                        <td key={m.id} className="compare-note">
+                          {state.progress[m.id]!.reflection!.note}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <th>다음에 해볼 일</th>
+                      {completed.map((m) => (
+                        <td key={m.id} className="compare-next">
+                          {state.progress[m.id]!.reflection!.next}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <section className="compare-insight">
+                <Lightbulb size={27} />
+                <div>
+                  <h2>어려웠지만 재미있었던 작업이 있었나요?</h2>
+                  <p>
+                    흥미가 높고 다시 해보고 싶다면, 필요한 기초를 조금 보충한 뒤
+                    다음 작은 과제를 시도해보세요. 이 결과는 이번 미션에 대한
+                    나의 회고이며 직무 적성을 확정하지 않아요.
+                  </p>
+                  <small>
+                    체험 전 경험: {state.profile?.experience} · 탐색 목적:{" "}
+                    {state.profile?.purpose}
+                  </small>
+                </div>
+              </section>
+              <button
+                className="btn secondary"
+                onClick={() => navigate("journal")}
+              >
+                나의 기록에서 다음 활동 확인하기
+              </button>
+            </>
+          )}
+        </main>
+      )}
+      {view === "guide" && (
+        <main className="wrap guide-page">
+          <div className="page-intro">
+            <span className="context-tag">
+              <HelpCircle size={16} /> 도움말
+            </span>
+            <h1>작게 해보고, 솔직하게 남겨요.</h1>
+            <p>체험을 시작하기 전에 알아두면 좋은 것들.</p>
+          </div>
+          <div className="guide-grid">
+            <section>
+              <h2>무엇을 체험하나요?</h2>
+              <p>
+                화면, 신청 규칙, 데이터, AI 검색, 접근 권한, 배포 판단까지 여섯
+                직무의 핵심 로직을 짧게 체험해요. 모두 JavaScript로 시작해요.
+              </p>
+              <h2>처음부터 코드를 전부 짜야 하나요?</h2>
+              <p>
+                시작 코드와 예시 데이터가 준비돼 있어요. 변수, 조건문, 반복문,
+                함수의 기초를 안다면 시작할 수 있어요. 문법 예제와 세 단계 힌트,
+                참고 풀이도 제공해요.
+              </p>
+              <h2>체험이 어려워도 회고할 수 있나요?</h2>
+              <p>
+                코드를 한 번 이상 수정하고 실행했다면 모든 테스트를 통과하지
+                않아도 회고를 남길 수 있어요. 힌트와 풀이 열람은 실력 감점으로
+                사용하지 않아요.
+              </p>
+              <h2>결과로 적성을 알 수 있나요?</h2>
+              <p>
+                이번 작업에서 느낀 흥미와 어려움을 비교할 수 있어요. 짧은
+                체험으로 직무 적성이나 취업 가능성을 판정하지 않아요. 전체
+                분야의 실제 업무를 모두 경험하는 것도 아니에요.
+              </p>
+            </section>
+            <section>
+              <h2>작업은 어디에 저장되나요?</h2>
+              <p>
+                서버에 저장하고, 연결이 끊기면 이 브라우저에 초안을 보관해요.
+                브라우저 쿠키로 기록을 구분해 같은 브라우저에서 이어할 수
+                있어요. 다른 기기와 동기화되지는 않아요. 마지막 저장 후 30일이
+                지난 서버 기록은 접속이나 저장 시 정리해요.
+              </p>
+              <h2>AI는 어떻게 사용하나요?</h2>
+              <p>
+                AI 연결과 동의가 있는 경우에만 현재 코드, 질문, 테스트 결과,
+                선택한 경험 수준을 OpenAI에 보내 맞춤 힌트를 받아요. AI가
+                연결되지 않아도 준비된 힌트로 모든 체험을 진행할 수 있어요.
+                비밀키와 개인정보는 코드나 질문에 입력하지 마세요.
+              </p>
+              <label className="consent-inline">
+                <input
+                  type="checkbox"
+                  checked={!!state.profile?.aiConsent}
+                  onChange={(e) =>
+                    setState((s) => ({
+                      ...s,
+                      profile: {
+                        experience,
+                        purpose,
+                        aiConsent: e.target.checked,
+                      },
+                    }))
+                  }
+                />{" "}
+                코드·질문·실행 결과를 OpenAI에 보내는 데 동의해요.
+              </label>
+              <p className="muted">
+                현재 상태:{" "}
+                {aiAvailable
+                  ? "맞춤 힌트 사용 가능"
+                  : "AI 연결 전 · 기본 힌트 사용 가능"}
+              </p>
+              <h2>어떤 기기에서 이용할 수 있나요?</h2>
+              <p>
+                코드 체험은 데스크톱의 Chrome이나 Edge를 권장해요. 휴대폰에서는
+                체험 소개와 기록을 확인할 수 있어요. 브라우저 데이터를 삭제하면
+                이 기기의 초안은 사라져요.
+              </p>
+              <button
+                className="btn secondary"
+                onClick={() => navigate("home")}
+              >
+                체험실로 돌아가기
+              </button>
+            </section>
+          </div>
+        </main>
+      )}
+      {view !== "home" && view !== "work" && (
+        <footer className="wrap site-footer">
+          <span>
+            해보기. <small>작은 경험으로 찾는 나의 방향</small>
+          </span>
+          <button onClick={() => navigate("guide")}>이용 및 데이터 안내</button>
+        </footer>
+      )}
+      {notice && (
+        <div className="toast" role="status">
+          <CheckCircle2 size={18} />
+          <span>{notice}</span>
+          <button aria-label="알림 닫기" onClick={() => setNotice("")}>
+            <X size={15} />
+          </button>
+        </div>
+      )}
+      {modal && (
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setModal(null);
+          }}
+        >
+          <section
+            className={`modal ${modal === "reflection" ? "reflection-modal" : ""}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+          >
+            <button
+              className="modal-close"
+              aria-label="닫기"
+              onClick={() => setModal(null)}
+            >
+              <X size={21} />
+            </button>
+            {modal === "reflection" && (
+              <>
+                <span className={`context-tag ${mission.color}`}>
+                  <TrackIcon id={active} size={16} />
+                  {mission.title} 회고
+                </span>
+                <h2 id="modal-title">해보니 어땠나요?</h2>
+                <p>느낀 점을 짧게 남겨요.</p>
+                <div className="reflection-ratings">
+                  <Rating
+                    label="이 작업이 흥미로웠나요?"
+                    value={reflection.interest}
+                    onChange={(n) =>
+                      setReflection((r) => ({ ...r, interest: n }))
+                    }
+                    low="별로였어요"
+                    high="아주 흥미로웠어요"
+                  />
+                  <Rating
+                    label="얼마나 어렵게 느껴졌나요?"
+                    value={reflection.difficulty}
+                    onChange={(n) =>
+                      setReflection((r) => ({ ...r, difficulty: n }))
+                    }
+                    low="쉬웠어요"
+                    high="많이 어려웠어요"
+                  />
+                  <Rating
+                    label="비슷한 작업을 다시 해보고 싶나요?"
+                    value={reflection.again}
+                    onChange={(n) => setReflection((r) => ({ ...r, again: n }))}
+                    low="아직은 아니에요"
+                    high="다시 해보고 싶어요"
+                  />
+                </div>
+                <label className="form-label">
+                  재미있거나 막혔던 순간, 그리고 그 이유
+                  <textarea
+                    rows={3}
+                    maxLength={2000}
+                    value={reflection.note}
+                    onChange={(e) =>
+                      setReflection((r) => ({ ...r, note: e.target.value }))
+                    }
+                    placeholder={
+                      active === "data"
+                        ? "어떤 숫자를 비교했고, 무엇을 더 확인해보고 싶나요?"
+                        : "어떤 부분을 바꿀 때 재미있었나요? 어려웠던 이유는 무엇인가요?"
+                    }
+                  />
+                </label>
+                <label className="form-label">
+                  다음에 해볼 작은 일
+                  <select
+                    value={reflection.next}
+                    onChange={(e) =>
+                      setReflection((r) => ({ ...r, next: e.target.value }))
+                    }
+                  >
+                    <option value="">하나를 골라주세요</option>
+                    {mission.next.map((n) => (
+                      <option key={n}>{n}</option>
+                    ))}
+                    <option>기초 문법을 보충하고 다시 체험하기</option>
+                    <option>다른 분야의 작업도 체험하기</option>
+                  </select>
+                </label>
+                <button
+                  className="btn primary full"
+                  onClick={finishReflection}
+                  disabled={
+                    !reflection.interest ||
+                    !reflection.difficulty ||
+                    !reflection.again ||
+                    !reflection.note.trim() ||
+                    !reflection.next
+                  }
+                >
+                  경험 기록하기
+                </button>
+              </>
+            )}
+            {modal === "reset" && (
+              <>
+                <h2 id="modal-title">처음 코드로 되돌릴까요?</h2>
+                <p>
+                  현재 수정한 코드와 실행 결과가 초기화돼요. 회고는 그대로
+                  남아요. 필요한 코드는 먼저 내려받아주세요.
+                </p>
+                <div className="modal-actions">
+                  <button
+                    className="btn secondary"
+                    onClick={() => setModal(null)}
+                  >
+                    취소
+                  </button>
+                  <button
+                    className="btn primary"
+                    onClick={() => {
+                      patch(active, {
+                        code: mission.starter,
+                        result: undefined,
+                      });
+                      setModal(null);
+                    }}
+                  >
+                    처음 코드로 되돌리기
+                  </button>
+                </div>
+              </>
+            )}
+            {modal === "solution" && (
+              <>
+                <h2 id="modal-title">참고 풀이를 살펴볼까요?</h2>
+                <p>
+                  풀이를 본 뒤 직접 한 줄씩 바꿔보세요. 열람 여부는 기록에
+                  남지만 점수나 순위에 사용하지 않아요.
+                </p>
+                <div className="modal-actions">
+                  <button
+                    className="btn secondary"
+                    onClick={() => setModal(null)}
+                  >
+                    더 생각해보기
+                  </button>
+                  <button
+                    className="btn primary"
+                    onClick={() => {
+                      patch(active, {
+                        code: mission.solution,
+                        result: undefined,
+                        usedSolution: true,
+                      });
+                      setModal(null);
+                      toast(
+                        "참고 풀이를 편집기에 불러왔어요. 실행하고 조건을 바꿔보세요.",
+                      );
+                    }}
+                  >
+                    참고 풀이 불러오기
+                  </button>
+                </div>
+              </>
+            )}
+            {modal === "delete" && (
+              <>
+                <h2 id="modal-title">모든 체험 기록을 삭제할까요?</h2>
+                <p>
+                  서버와 이 기기에 저장한 코드, 회고, 사전 질문 응답을 삭제해요.
+                  삭제한 기록은 복구할 수 없어요.
+                </p>
+                <div className="modal-actions">
+                  <button
+                    className="btn secondary"
+                    onClick={() => setModal(null)}
+                  >
+                    취소
+                  </button>
+                  <button className="btn danger" onClick={erase}>
+                    전체 기록 삭제
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
