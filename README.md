@@ -4,7 +4,9 @@
 
 [체험하기](https://haebogi-career-lab.vercel.app) · [개발 PR](https://github.com/taehun0208/2026-cs-hackathon/pull/1)
 
-현재 배포본은 기본 힌트를 제공합니다. 실제 AI 호출 검증은 보안 키 연결 완료 후 진행합니다.
+배포본에서 OpenAI 맞춤 힌트와 Neon 기록 저장이 실제로 동작합니다. 로컬·Vercel 환경의 실제 AI 호출을 검증했습니다.
+
+![직무 선택 화면](docs/screenshots/home.jpg)
 
 설치 없이 직무를 고르고, 준비된 코드를 수정해 실행한 뒤 흥미와 어려움을 기록합니다. 두 가지 이상을 체험하면 경험을 나란히 비교할 수 있습니다.
 
@@ -29,6 +31,8 @@
 2. 필요하면 `inspect_checks`로 학생 브라우저의 실행 기록을 확인하거나 `read_syntax_reference`로 문법 힌트를 읽습니다.
 3. 짧은 힌트와 다음 행동을 제안합니다. 화면에는 실제 호출한 도구의 활동만 표시합니다.
 4. 사용자가 코드를 수정하고 다시 실행합니다.
+
+![AI 코치 활동과 다음 행동](docs/screenshots/ai-coach.jpg)
 
 도구 호출은 최대 3회 요청 안에서 끝납니다. AI는 코드를 서버에서 실행하지 않습니다. 브라우저가 보낸 실행 결과는 검증되지 않은 참고 자료로 구분합니다. 연결 실패·사용 한도 초과·미동의 시 기본 힌트를 표시하며 AI 응답으로 표시하지 않습니다.
 
@@ -67,7 +71,9 @@ vercel link
 vercel --prod
 ```
 
-브랜치는 `develop`에서 작업하고 PR 검증 후 `main`에 병합합니다. `main`이 배포 기준입니다.
+브랜치는 `develop`에서 작업하고 PR 검증 후 `main`에 병합합니다. `main`이 배포 기준이며 Vercel GitHub 연동으로 자동 배포합니다.
+
+현재 연결한 API 키는 선택한 설정에 따라 30일 후 만료됩니다. 계속 운영하려면 만료 전에 Vercel의 서버 비밀 설정을 교체해야 합니다.
 
 ## 데이터와 실행 경계
 
@@ -90,6 +96,6 @@ LAB_TEST_URL=http://127.0.0.1:3000 node tests/api-smoke.mjs
 
 단위 검증은 과제 풀이, AI 도구 루프·오류 처리·동의·사용 한도, 저장 만료와 사용자 분리를 포함합니다. API 확인은 전용 임시 기록만 생성·삭제합니다. 실제 AI 연결 테스트는 `LAB_TEST_URL=<주소> node tests/live-ai-smoke.mjs`로 별도 실행하며, 모의 응답 검증을 실제 호출 성공으로 취급하지 않습니다.
 
-- [초기 PRD](docs/PRD.md)
+- 초기 PRD: [Markdown](docs/PRD.md) · [PDF](docs/PRD-initial.pdf) · [Word](docs/PRD-initial.docx)
 - [현재 구현 범위](docs/IMPLEMENTATION.md)
 - [디자인 참고와 결정](docs/DESIGN.md)
