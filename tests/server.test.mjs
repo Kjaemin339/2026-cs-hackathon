@@ -1,0 +1,70 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { identity, sameOrigin, stateSchema } from "../lib/server.ts";
+test("browser-facing Host is used while foreign origins and forwarded-host spoofing are rejected", () => {
+  const request = (origin, extra = {}) =>
+    new Request("http://localhost:3000/api/state", {
+      headers: {
+        Host: "127.0.0.1:3000",
+        Origin: origin,
+        "Content-Type": "application/json",
+        ...extra,
+      },
+    });
+  assert.ok(sameOrigin(request("http://127.0.0.1:3000")));
+  assert.equal(
+    sameOrigin(
+      request("https://evil.example", { "X-Forwarded-Host": "evil.example" }),
+    ),
+    false,
+  );
+  assert.equal(sameOrigin(request("null")), false);
+  assert.equal(
+    sameOrigin(
+      request("http://127.0.0.1:3000", { "Content-Type": "text/plain" }),
+    ),
+    false,
+  );
+});
+test("identity ignores legacy user headers and reuses only valid opaque cookies", () => {
+  const first = identity(
+    new Request("https://lab.example", {
+      headers: { "x-oai-user-id": "victim" },
+    }),
+  );
+  assert.match(first.key, /^guest:[0-9a-f-]{36}$/);
+  assert.ok(!first.key.includes("victim"));
+  assert.match(first.cookie, /HttpOnly; SameSite=Lax/);
+  const cookie = first.cookie.split(";")[0];
+  const next = identity(
+    new Request("https://lab.example", { headers: { Cookie: cookie } }),
+  );
+  assert.equal(first.key, next.key);
+  assert.equal(next.cookie, "");
+  const bad = identity(
+    new Request("https://lab.example", {
+      headers: { Cookie: "lab_session=not-a-valid-id" },
+    }),
+  );
+  assert.notEqual(bad.key, "guest:not-a-valid-id");
+});
+test("server state preserves all six role records", () => {
+  const progress = {
+    version: 1,
+    code: "function example(){}",
+    runs: 1,
+    hintLevel: 0,
+    usedSolution: false,
+    updatedAt: new Date().toISOString(),
+  };
+  const records = Object.fromEntries(
+    ["frontend", "backend", "data", "ai", "security", "cloud"].map((id) => [
+      id,
+      progress,
+    ]),
+  );
+  assert.deepEqual(
+    stateSchema.parse({ version: 1, progress: records }).progress,
+    records,
+  );
+});
