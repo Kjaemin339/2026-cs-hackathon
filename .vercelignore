@@ -1,0 +1,10 @@
+.git
+.next
+.local
+.env*
+node_modules
+outputs
+work
+tests
+docs
+.github
