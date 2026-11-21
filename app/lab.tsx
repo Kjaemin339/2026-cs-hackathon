@@ -469,6 +469,7 @@ export default function Lab() {
     }
     const requestEpoch = ++coachEpoch.current;
     setAsking(true);
+    setHint("");
     setCoachTrace([]);
     setCoachAction("");
     try {
@@ -836,113 +837,6 @@ export default function Lab() {
                           : "const unique = new Set();\nunique.add('개발:a');\nunique.has('개발:a'); // true"}
                 </pre>
               </details>
-              <div className="hint-section">
-                <h2>
-                  <Lightbulb size={18} /> 함께 풀기
-                </h2>
-                <p>실행하고, 막힌 부분만 물어보세요.</p>
-                <button
-                  className="btn soft full"
-                  onClick={basicHint}
-                  disabled={asking}
-                >
-                  힌트 {Math.min(progress.hintLevel + 1, 3)} 보기
-                </button>
-                {asking && (
-                  <div className="coach-working" role="status">
-                    <LoaderCircle size={16} className="spin" /> 코드와 실행
-                    결과를 살펴보는 중
-                  </div>
-                )}
-                {hint && (
-                  <div className="hint-answer" role="status">
-                    <span>{hintSource}</span>
-                    {coachTrace.length > 0 && (
-                      <ol className="coach-trace">
-                        {coachTrace.map((step, i) => (
-                          <li key={i}>
-                            <Check size={12} />
-                            {step}
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                    <p>{hint}</p>
-                    {coachAction && (
-                      <button
-                        className="coach-next"
-                        disabled={running}
-                        onClick={() =>
-                          coachAction === "inspect"
-                            ? setTab("tests")
-                            : execute()
-                        }
-                      >
-                        {coachAction === "inspect"
-                          ? "확인 항목 살펴보기"
-                          : "수정한 코드 실행하기"}
-                        <ChevronRight size={14} />
-                      </button>
-                    )}
-                  </div>
-                )}
-                <details className="ai-details" open={aiAvailable}>
-                  <summary>
-                    <Sparkles size={15} /> AI 코치에게 질문
-                  </summary>
-                  {aiAvailable && (
-                    <p>
-                      과제 조건과 실행 기록을 확인하고, 다음 한 단계를 제안해요.
-                    </p>
-                  )}
-                  {!aiAvailable && (
-                    <p className="muted">
-                      AI 연결 전이에요. 기본 힌트를 이용해주세요.
-                    </p>
-                  )}
-                  {!state.profile?.aiConsent && (
-                    <label className="consent-inline">
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        onChange={() =>
-                          setState((s) => ({
-                            ...s,
-                            profile: { experience, purpose, aiConsent: true },
-                          }))
-                        }
-                      />{" "}
-                      코드·질문·실행 결과를 OpenAI에 보내는 데 동의해요.
-                      개인정보와 비밀키는 제외해주세요.
-                    </label>
-                  )}
-                  <textarea
-                    aria-label="코드에 대한 질문"
-                    value={question}
-                    maxLength={600}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    placeholder="어떤 조건부터 확인하면 좋을까요?"
-                    rows={3}
-                  />
-                  <button
-                    className="btn soft full"
-                    onClick={ask}
-                    disabled={
-                      asking ||
-                      !question.trim() ||
-                      !aiAvailable ||
-                      !state.profile?.aiConsent
-                    }
-                  >
-                    {asking ? (
-                      <LoaderCircle className="spin" size={16} />
-                    ) : (
-                      <MessageCircle size={16} />
-                    )}{" "}
-                    맞춤 힌트 받기
-                  </button>
-                </details>
-              </div>
               <button
                 className="solution-link"
                 onClick={() => setModal("solution")}
@@ -1267,6 +1161,116 @@ export default function Lab() {
                 <Check size={14} /> 직접 수정하고 실행했다면 기록할 수 있어요.
               </div>
             </section>
+            <aside
+              className="coach-panel"
+              id="coach-panel"
+              aria-label="AI 코치"
+            >
+              <div className="hint-section">
+                <h2>
+                  <MessageCircle size={18} /> AI 코치
+                </h2>
+                <p>코드와 실행 결과에서 다음 한 단계를 찾아요.</p>
+                <details className="ai-details" open={aiAvailable}>
+                  <summary>
+                    <Sparkles size={15} /> 질문하기
+                  </summary>
+                  {!aiAvailable && (
+                    <p className="muted">
+                      AI 연결 전이에요. 기본 힌트를 이용해주세요.
+                    </p>
+                  )}
+                  {!state.profile?.aiConsent && (
+                    <label className="consent-inline">
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        onChange={() =>
+                          setState((s) => ({
+                            ...s,
+                            profile: { experience, purpose, aiConsent: true },
+                          }))
+                        }
+                      />{" "}
+                      코드·질문·실행 결과를 OpenAI에 보내는 데 동의해요.
+                      개인정보와 비밀키는 제외해주세요.
+                    </label>
+                  )}
+                  <textarea
+                    aria-label="코드에 대한 질문"
+                    value={question}
+                    maxLength={600}
+                    disabled={asking}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder="어떤 조건부터 확인하면 좋을까요?"
+                    rows={3}
+                  />
+                  <button
+                    className="btn soft full"
+                    onClick={ask}
+                    disabled={
+                      asking ||
+                      !question.trim() ||
+                      !aiAvailable ||
+                      !state.profile?.aiConsent
+                    }
+                  >
+                    {asking ? (
+                      <LoaderCircle className="spin" size={16} />
+                    ) : (
+                      <MessageCircle size={16} />
+                    )}{" "}
+                    맞춤 힌트 받기
+                  </button>
+                </details>
+
+                <button
+                  className="btn soft full"
+                  onClick={basicHint}
+                  disabled={asking}
+                >
+                  기본 힌트 {Math.min(progress.hintLevel + 1, 3)} 보기
+                </button>
+                {asking && (
+                  <div className="coach-working" role="status">
+                    <LoaderCircle size={16} className="spin" /> 코드와 실행
+                    결과를 살펴보는 중
+                  </div>
+                )}
+                {hint && (
+                  <div className="hint-answer" role="status">
+                    <span>{hintSource}</span>
+                    {coachTrace.length > 0 && (
+                      <ol className="coach-trace">
+                        {coachTrace.map((step, i) => (
+                          <li key={i}>
+                            <Check size={12} />
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                    <p>{hint}</p>
+                    {coachAction && (
+                      <button
+                        className="coach-next"
+                        disabled={running}
+                        onClick={() =>
+                          coachAction === "inspect"
+                            ? setTab("tests")
+                            : execute()
+                        }
+                      >
+                        {coachAction === "inspect"
+                          ? "확인 항목 살펴보기"
+                          : "수정한 코드 실행하기"}
+                        <ChevronRight size={14} />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </aside>
           </div>
         </main>
       )}
