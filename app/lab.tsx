@@ -481,6 +481,7 @@ export default function Lab() {
       if (!saved.ok) throw new Error();
       const r = await fetch("/api/coach", {
         method: "POST",
+        signal: AbortSignal.timeout(55000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           track: active,
@@ -840,7 +841,11 @@ export default function Lab() {
                   <Lightbulb size={18} /> 함께 풀기
                 </h2>
                 <p>실행하고, 막힌 부분만 물어보세요.</p>
-                <button className="btn soft full" onClick={basicHint}>
+                <button
+                  className="btn soft full"
+                  onClick={basicHint}
+                  disabled={asking}
+                >
                   힌트 {Math.min(progress.hintLevel + 1, 3)} 보기
                 </button>
                 {asking && (
@@ -881,10 +886,15 @@ export default function Lab() {
                     )}
                   </div>
                 )}
-                <details className="ai-details">
+                <details className="ai-details" open={aiAvailable}>
                   <summary>
                     <Sparkles size={15} /> AI 코치에게 질문
                   </summary>
+                  {aiAvailable && (
+                    <p>
+                      과제 조건과 실행 기록을 확인하고, 다음 한 단계를 제안해요.
+                    </p>
+                  )}
                   {!aiAvailable && (
                     <p className="muted">
                       AI 연결 전이에요. 기본 힌트를 이용해주세요.
