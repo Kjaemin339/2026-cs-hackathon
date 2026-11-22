@@ -18,7 +18,9 @@ try {
     version: 1,
     profile: {
       experience: "기초 문법을 배웠어요",
+      experienceSource: "self_reported",
       purpose: "Disposable connection test",
+      purposeSource: "self_reported",
       aiConsent: true,
     },
     progress: {},
