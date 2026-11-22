@@ -77,7 +77,37 @@ export type Profile = {
   purposeSource: AnswerSource;
   aiConsent: boolean;
 };
+export type NextActionCandidate = {
+  id: string;
+  kind: "foundation" | "extend" | "study" | "explore" | "broader" | "review";
+  track: TrackId;
+  title: string;
+};
+export type NextActionPlan = {
+  ruleVersion: string;
+  track: TrackId;
+  contentVersion: string;
+  executionId: string;
+  ratings: { interest: number; difficulty: number; again: number };
+  context: {
+    completed: { track: TrackId; interest: number }[];
+    availableTracks: TrackId[];
+  };
+  ruleId:
+    | "foundation-first"
+    | "extend"
+    | "study"
+    | "explore"
+    | "broader"
+    | "revisit"
+    | "review";
+  reason: string;
+  candidates: NextActionCandidate[];
+  selectedId: string;
+  selectionReason: string;
+};
 export type Reflection = {
+  nextPlan?: NextActionPlan;
   interest: number;
   difficulty: number;
   again: number;

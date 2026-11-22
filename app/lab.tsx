@@ -60,6 +60,12 @@ import {
   snapshotExecution,
   updateProfileAnswer,
 } from "../lib/lab-state";
+import {
+  nextActionSuggestion,
+  recommendationContext,
+  makeNextActionPlan,
+  representativeTracks,
+} from "../lib/next-actions";
 import { requestCoach } from "../lib/coach-request";
 import { DeadlineExceeded } from "../lib/async-deadline";
 
@@ -298,6 +304,8 @@ export default function Lab() {
     note: "",
     next: "",
   });
+  const [selectedNextId, setSelectedNextId] = useState("");
+  const [nextReason, setNextReason] = useState("");
   const latest = useRef(state),
     saveChain = useRef(Promise.resolve()),
     saveEpoch = useRef(0),
@@ -317,6 +325,12 @@ export default function Lab() {
       result: currentExecution(storedProgress)?.result,
     };
   const events = mission.previewArgs[0] as typeof originalEvents;
+  const nextContext = recommendationContext(state, active, reflection);
+  const nextSuggestion = nextActionSuggestion(reflection, active, nextContext);
+  const selectedNext = nextSuggestion?.candidates.find(
+    (c) => c.id === selectedNextId,
+  );
+  const representative = representativeTracks(state);
   const previewArgs = currentExecution(progress)?.previewArgs;
   const previewResult =
     active === "frontend" &&
@@ -640,6 +654,15 @@ export default function Lab() {
       }
     }
   }
+  function rateReflection(
+    field: "interest" | "difficulty" | "again",
+    value: number,
+  ) {
+    if (reflection[field] === value) return;
+    setReflection((r) => ({ ...r, [field]: value, next: "" }));
+    setSelectedNextId("");
+    setNextReason("");
+  }
   function openReflection() {
     const r = progress.reflection;
     setReflection(
@@ -653,6 +676,11 @@ export default function Lab() {
           }
         : { interest: 0, difficulty: 0, again: 0, note: "", next: "" },
     );
+    const saved = r?.nextPlan;
+    const execution = currentExecution(progress);
+    const reuse = saved && execution?.id === saved.executionId;
+    setSelectedNextId(reuse ? saved.selectedId : "");
+    setNextReason(reuse ? saved.selectionReason : "");
     setModal("reflection");
   }
   function finishReflection() {
@@ -662,12 +690,25 @@ export default function Lab() {
       !reflection.difficulty ||
       !reflection.again ||
       !reflection.note.trim() ||
-      !reflection.next
+      !selectedNext ||
+      !nextReason.trim()
     )
       return;
+    const execution = currentExecution(progress)!;
+    const nextPlan = makeNextActionPlan(
+      mission,
+      execution.id,
+      reflection,
+      nextContext,
+      selectedNextId,
+      nextReason,
+    );
+    if (!nextPlan || !selectedNext) return;
     patch(active, {
       reflection: {
         ...reflection,
+        next: selectedNext.title,
+        nextPlan,
         endedAt: new Date().toISOString(),
         execution: currentExecution(progress),
       },
@@ -1560,6 +1601,16 @@ export default function Lab() {
                       <div className="next-action">
                         <span>다음에 해볼 일</span>
                         <b>{r.next}</b>
+                        {r.nextPlan && (
+                          <>
+                            <p className="next-plan-reason">
+                              선택 당시 제안: {r.nextPlan.reason}
+                            </p>
+                            <p className="next-plan-choice">
+                              내 선택 이유: {r.nextPlan.selectionReason}
+                            </p>
+                          </>
+                        )}
                       </div>
                       <div className="record-foot">
                         <small>
@@ -1704,12 +1755,31 @@ export default function Lab() {
               <section className="compare-insight">
                 <Lightbulb size={27} />
                 <div>
-                  <h2>어려웠지만 재미있었던 작업이 있었나요?</h2>
+                  <h2>흥미를 가장 높게 답한 체험의 다음 활동</h2>
                   <p>
-                    흥미가 높고 다시 해보고 싶다면, 필요한 기초를 조금 보충한 뒤
-                    다음 작은 과제를 시도해보세요. 이 결과는 이번 미션에 대한
-                    나의 회고이며 직무 적성을 확정하지 않아요.
+                    {representative.length > 1
+                      ? "같은 점수의 체험은 함께 보여드려요. 먼저 해볼 활동은 직접 골라보세요."
+                      : "이번 회고에서 고른 후속 활동이에요."}{" "}
+                    직무 적성을 판정하지 않아요.
                   </p>
+                  <ul className="representative-actions">
+                    {representative.map((id) => {
+                      const saved = state.progress[id]!.reflection!;
+                      return (
+                        <li key={id}>
+                          <strong>
+                            {missions.find((m) => m.id === id)!.title}
+                          </strong>
+                          <span>{saved.next}</span>
+                          {saved.nextPlan && (
+                            <small>
+                              내 선택 이유: {saved.nextPlan.selectionReason}
+                            </small>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                   <small>
                     체험 전 경험:{" "}
                     {profileAnswerLabel(state.profile, "experience")} · 탐색
@@ -1868,31 +1938,29 @@ export default function Lab() {
                   <Rating
                     label="이 작업이 흥미로웠나요?"
                     value={reflection.interest}
-                    onChange={(n) =>
-                      setReflection((r) => ({ ...r, interest: n }))
-                    }
+                    onChange={(n) => rateReflection("interest", n)}
                     low="별로였어요"
                     high="아주 흥미로웠어요"
                   />
                   <Rating
                     label="얼마나 어렵게 느껴졌나요?"
                     value={reflection.difficulty}
-                    onChange={(n) =>
-                      setReflection((r) => ({ ...r, difficulty: n }))
-                    }
+                    onChange={(n) => rateReflection("difficulty", n)}
                     low="쉬웠어요"
                     high="많이 어려웠어요"
                   />
                   <Rating
                     label="비슷한 작업을 다시 해보고 싶나요?"
                     value={reflection.again}
-                    onChange={(n) => setReflection((r) => ({ ...r, again: n }))}
+                    onChange={(n) => rateReflection("again", n)}
                     low="아직은 아니에요"
                     high="다시 해보고 싶어요"
                   />
                 </div>
                 <label className="form-label">
-                  재미있거나 막혔던 순간, 그리고 그 이유
+                  {active === "data"
+                    ? "눈여겨본 수치와 다음 행사 개선안"
+                    : "재미있거나 막혔던 순간, 그리고 그 이유"}
                   <textarea
                     rows={3}
                     maxLength={2000}
@@ -1902,27 +1970,61 @@ export default function Lab() {
                     }
                     placeholder={
                       active === "data"
-                        ? "어떤 숫자를 비교했고, 무엇을 더 확인해보고 싶나요?"
+                        ? "예: 진로 참여율이 67%(3명 중 2명)였어요. 다음에는 행사 전에 알림을 보내보고 싶어요."
                         : "어떤 부분을 바꿀 때 재미있었나요? 어려웠던 이유는 무엇인가요?"
                     }
                   />
                 </label>
-                <label className="form-label">
-                  다음에 해볼 작은 일
-                  <select
-                    value={reflection.next}
-                    onChange={(e) =>
-                      setReflection((r) => ({ ...r, next: e.target.value }))
-                    }
-                  >
-                    <option value="">하나를 골라주세요</option>
-                    {mission.next.map((n) => (
-                      <option key={n}>{n}</option>
-                    ))}
-                    <option>기초 문법을 보충하고 다시 체험하기</option>
-                    <option>다른 분야의 작업도 체험하기</option>
-                  </select>
-                </label>
+                <fieldset
+                  className="next-suggestions"
+                  aria-describedby="next-action-explanation"
+                >
+                  <legend>다음에 해볼 작은 일</legend>
+                  {nextSuggestion ? (
+                    <>
+                      <p
+                        className="suggestion-reason"
+                        id="next-action-explanation"
+                      >
+                        {nextSuggestion.reason}
+                      </p>
+                      {nextSuggestion.candidates.map((candidate) => (
+                        <label className="next-option" key={candidate.id}>
+                          <input
+                            type="radio"
+                            name="next-activity"
+                            value={candidate.id}
+                            checked={selectedNextId === candidate.id}
+                            onChange={() => {
+                              setSelectedNextId(candidate.id);
+                              setNextReason("");
+                            }}
+                          />
+                          <span>{candidate.title}</span>
+                        </label>
+                      ))}
+                    </>
+                  ) : (
+                    <p
+                      className="suggestion-reason"
+                      id="next-action-explanation"
+                    >
+                      세 가지 점수를 고르면 다음 활동을 제안해요.
+                    </p>
+                  )}
+                </fieldset>
+                {selectedNext && (
+                  <label className="form-label">
+                    이 활동을 고른 이유
+                    <input
+                      type="text"
+                      value={nextReason}
+                      maxLength={300}
+                      onChange={(e) => setNextReason(e.target.value)}
+                      placeholder="예: 재미있었지만 조건문을 더 연습하고 싶어서요."
+                    />
+                  </label>
+                )}
                 <button
                   className="btn primary full"
                   onClick={finishReflection}
@@ -1932,7 +2034,8 @@ export default function Lab() {
                     !reflection.difficulty ||
                     !reflection.again ||
                     !reflection.note.trim() ||
-                    !reflection.next
+                    !selectedNext ||
+                    !nextReason.trim()
                   }
                 >
                   경험 기록하기
