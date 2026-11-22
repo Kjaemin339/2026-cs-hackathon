@@ -13,7 +13,16 @@ const store = () => ({
   reserve: async () => true,
   logUsage: async () => {},
 });
-const select = (g) => ({ guideId: g.id });
+const select = (g) =>
+  g.id.includes("check-guide")
+    ? { intent: "check", checkId: g.checkIds[0] }
+    : {
+        intent: g.id.endsWith("boundaries")
+          ? "rules"
+          : g.id.endsWith("syntax")
+            ? "syntax"
+            : "step",
+      };
 function provider(final, inspect = () => {}) {
   let round = 0;
   return async (_, options) => {
@@ -113,7 +122,7 @@ test("a final selection before both required tools have run is not accepted", as
   const m = missionById("ai"),
     g = coachGuides(m)[0];
   assert.equal(
-    validateSelection(select(g), m, new Set(["read_mission"])),
+    validateSelection({ guideId: g.id }, m, new Set(["read_mission"])),
     null,
   );
   const result = await getHint(
@@ -188,7 +197,10 @@ test("check-specific selections cite the actual official input/expected case and
         (g) => g.id === `${m.id}/check-guide/${i + 1}`,
       );
       const result = await getHint(
-        input(m),
+        {
+          ...input(m),
+          question: `“${m.tests[i].label}” 확인 항목의 입력과 기대값을 비교해 주세요.`,
+        },
         "fixture",
         store(),
         config(provider(select(g))),

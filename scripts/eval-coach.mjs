@@ -1,22 +1,36 @@
-// Explicit opt-in: at most 36 synthetic cases / 108 provider requests. Uses
+// Explicit opt-in: at most 36 cases x 2 repeats / 216 provider requests. Uses
 // in-memory evaluation records only, never reads or mutates a learner's DB.
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { getHint } from "../lib/coach.ts";
 import { coachGuides } from "../lib/coach-guides.ts";
 import { missionById } from "../lib/missions.ts";
+import { holdoutCases } from "../tests/fixtures/coach-routing-holdout.mjs";
 import { qualityCases } from "../tests/fixtures/coach-quality.mjs";
 if (!process.argv.includes("--live"))
   throw Error("Explicit --live opt-in required");
 if (!process.env.OPENAI_API_KEY)
   throw Error("OPENAI_API_KEY is not configured");
 const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
-const limit = Number(
-  process.argv.find((a) => a.startsWith("--limit="))?.split("=")[1] ?? 36,
+const suite =
+  process.argv.find((a) => a.startsWith("--suite="))?.split("=")[1] ??
+  "original";
+if (!["original", "holdout"].includes(suite))
+  throw Error("suite must be original or holdout");
+const pool = suite === "original" ? qualityCases : holdoutCases;
+const repeat = Number(
+  process.argv.find((a) => a.startsWith("--repeat="))?.split("=")[1] ?? 1,
 );
-if (!Number.isInteger(limit) || limit < 1 || limit > 36)
-  throw Error("limit must be 1..36");
-const cases = qualityCases.slice(0, limit);
+if (![1, 2].includes(repeat)) throw Error("repeat must be 1 or 2");
+const limit = Number(
+  process.argv.find((a) => a.startsWith("--limit="))?.split("=")[1] ??
+    pool.length,
+);
+if (!Number.isInteger(limit) || limit < 1 || limit > pool.length)
+  throw Error(`limit must be 1..${pool.length}`);
+const cases = Array.from({ length: repeat }, (_, i) =>
+  pool.slice(0, limit).map((c) => ({ ...c, repetition: i + 1 })),
+).flat();
 const rows = [],
   usage = [],
   reservations = new Map();
@@ -31,6 +45,24 @@ const storage = {
   },
   logUsage: async (u) => usage.push(u),
 };
+const digest = async (paths) => {
+  const hash = createHash("sha256");
+  for (const path of paths)
+    hash.update(await readFile(new URL(path, import.meta.url)));
+  return hash.digest("hex");
+};
+const implementationPaths = [
+  "../lib/coach.ts",
+  "../lib/coach-guides.ts",
+  "../lib/coach-routing.ts",
+];
+const fixturePaths = [
+  suite === "original"
+    ? "../tests/fixtures/coach-quality.mjs"
+    : "../tests/fixtures/coach-routing-holdout.mjs",
+];
+const implementationDigest = await digest(implementationPaths);
+const fixtureDigest = await digest(fixturePaths);
 for (const c of cases) {
   const started = Date.now();
   const result = await getHint(
@@ -39,9 +71,9 @@ for (const c of cases) {
       code: c.code,
       question: c.question,
       level: c.level,
-      tests: [],
+      tests: c.tests ?? [],
     },
-    `evaluation:${c.track}`,
+    `evaluation:${suite}:${c.id}`,
     storage,
     {
       apiKey: process.env.OPENAI_API_KEY,
@@ -58,6 +90,8 @@ for (const c of cases) {
     result.source === "ai" && c.expectedGuideIds.includes(result.guideId);
   rows.push({
     id: c.id,
+    repetition: c.repetition,
+    intent: result.intent ?? null,
     source: result.source,
     guideId: result.guideId ?? null,
     expectedGuideIds: c.expectedGuideIds,
@@ -67,18 +101,15 @@ for (const c of cases) {
   });
   console.log(JSON.stringify(rows.at(-1)));
 }
-const digest = async (paths) => {
-  const hash = createHash("sha256");
-  for (const path of paths)
-    hash.update(await readFile(new URL(path, import.meta.url)));
-  return hash.digest("hex");
-};
 const report = {
-  implementationDigest: await digest([
-    "../lib/coach.ts",
-    "../lib/coach-guides.ts",
-  ]),
-  fixtureDigest: await digest(["../tests/fixtures/coach-quality.mjs"]),
+  implementationDigest,
+  fixtureDigest,
+  unchangedDuringRun:
+    implementationDigest === (await digest(implementationPaths)) &&
+    fixtureDigest === (await digest(fixturePaths)),
+  suite,
+  repeat,
+  distinctCaseCount: limit,
   evaluatedAt: new Date().toISOString(),
   model,
   caseCount: rows.length,
@@ -92,7 +123,12 @@ const report = {
 };
 await mkdir(new URL("../docs/evals/", import.meta.url), { recursive: true });
 await writeFile(
-  new URL("../docs/evals/coach-quality-latest.json", import.meta.url),
+  new URL(
+    suite === "original"
+      ? "../docs/evals/coach-quality-latest.json"
+      : "../docs/evals/coach-routing-holdout.json",
+    import.meta.url,
+  ),
   JSON.stringify(report, null, 2) + "\n",
 );
 console.log(
@@ -103,5 +139,9 @@ console.log(
     fallbackCount: report.fallbackCount,
   }),
 );
-if (report.safeCount !== rows.length || report.relevantCount !== rows.length)
+if (
+  !report.unchangedDuringRun ||
+  report.safeCount !== rows.length ||
+  report.relevantCount !== rows.length
+)
   process.exitCode = 1;

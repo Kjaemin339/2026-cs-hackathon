@@ -56,6 +56,7 @@ try {
     "ai",
     result.notice ?? "Expected a real AI response, got a prepared hint",
   );
+  assert.ok(["rules", "syntax", "step", "check"].includes(result.intent));
   const selected = coachGuides(mission).find((g) => g.id === result.guideId);
   assert.ok(selected, "Expected a reviewed guide for this mission");
   assert.equal(result.message, selected.message);
@@ -67,6 +68,7 @@ try {
       {
         status: "PASS",
         source: result.source,
+        intent: result.intent,
         trace: result.trace,
         nextAction: result.nextAction,
         message: result.message,
