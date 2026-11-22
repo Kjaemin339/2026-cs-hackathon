@@ -84,7 +84,7 @@ vercel --prod
 ## 데이터와 실행 경계
 
 - HttpOnly 쿠키로 브라우저별 기록을 구분합니다. 별도 로그인이나 기기 간 동기화는 없습니다.
-- 기록은 Neon에 저장하고 브라우저에는 초안을 보관합니다. 서버 기록은 마지막 저장 후 30일이 지나면 읽기·쓰기 과정에서 정리합니다.
+- 기록은 Neon에 저장하고 브라우저에는 초안을 보관합니다. 서버 체험 기록은 마지막 저장 후 30일간 유효하며 만료 자료와 AI 호출 정보는 일일 작업으로 정리합니다. 마지막 저장 시각·기한·실패 재시도와 명시적 초안 복구를 제공합니다. [보관·삭제·배포 정책](docs/RECORD-MANAGEMENT.md)을 참고하세요.
 - 학습자 코드는 별도 출처의 iframe과 Worker에서 실행합니다. 네트워크 접근을 막고 3초가 지나면 종료합니다.
 - AI에 코드·질문·실행 기록·선택한 경험 수준을 전송합니다. 전송 동의는 서버에서 재확인합니다.
 - 하루 최대 브라우저당 22회, 직무당 6회, 전체 200회의 AI 작업을 허용합니다. 이는 결제 금액 한도를 보장하지 않습니다.
@@ -98,6 +98,7 @@ npm test
 npm run typecheck
 npm run build
 LAB_TEST_URL=http://127.0.0.1:3000 node tests/api-smoke.mjs
+LAB_TEST_URL=http://127.0.0.1:3000 node tests/record-management-api.mjs
 LAB_TEST_URL=http://127.0.0.1:3000 node tests/next-actions-api.mjs
 ```
 
