@@ -35,7 +35,8 @@ import {
 } from "lucide-react";
 import {
   missions,
-  events,
+  events as originalEvents,
+  canStartMission,
   emptyState,
   initialProgress,
   missionById,
@@ -44,6 +45,7 @@ import {
   type Progress,
   type Profile,
 } from "../lib/missions";
+import { missionForProgress } from "../lib/mission-catalog";
 import { runMission } from "../lib/runner";
 import {
   canRecordAttempt,
@@ -303,12 +305,18 @@ export default function Lab() {
     coachController = useRef<AbortController | null>(null),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   latest.current = state;
-  const mission = missionById(active)!,
+  const pinned = state.progress[active];
+  const sessionMission = pinned
+    ? missionForProgress(active, pinned)
+    : missionById(active);
+  const unavailableContent = !sessionMission;
+  const mission = sessionMission ?? missions.find((m) => m.id === active)!,
     storedProgress = state.progress[active] ?? initialProgress(mission),
     progress = {
       ...storedProgress,
       result: currentExecution(storedProgress)?.result,
     };
+  const events = mission.previewArgs[0] as typeof originalEvents;
   const previewArgs = currentExecution(progress)?.previewArgs;
   const previewResult =
     active === "frontend" &&
@@ -317,7 +325,9 @@ export default function Lab() {
       previewArgs[2] !== availableOnly)
       ? undefined
       : progress.result;
-  const recorded = missions.filter((m) => state.progress[m.id]?.reflection);
+  const recorded = missions
+    .filter((m) => state.progress[m.id]?.reflection)
+    .map((m) => missionForProgress(m.id, state.progress[m.id]!) ?? m);
   const completed = recorded.filter((m) => isCompleted(state.progress[m.id]));
   function answerProfile(field: "experience" | "purpose", value: string) {
     setState((s) => ({
@@ -414,6 +424,15 @@ export default function Lab() {
               body: JSON.stringify(snapshot),
               signal: AbortSignal.timeout(8000),
             });
+            if (r.status === 409) {
+              if (latest.current === snapshot) {
+                setSave("과제 기준 확인 필요");
+                toast(
+                  "시작한 과제 기준이 달라 서버에 덮어쓰지 않았어요. 기록을 내려받고 새로고침해주세요.",
+                );
+              }
+              return;
+            }
             if (!r.ok) throw new Error();
             if (latest.current === snapshot) setSave("저장됨");
           } catch {
@@ -497,6 +516,10 @@ export default function Lab() {
     openWork(id);
   }
   function openWork(id: TrackId) {
+    if (!state.progress[id] && !canStartMission(id)) {
+      toast("지금은 새 체험을 준비 중이에요.");
+      return;
+    }
     cancelCoach();
     setActive(id);
     setHint("");
@@ -513,7 +536,7 @@ export default function Lab() {
     navigate("work");
   }
   async function execute() {
-    if (running) return;
+    if (running || unavailableContent) return;
     setRunning(true);
     const code = progress.code;
     const executedAt = new Date().toISOString();
@@ -544,6 +567,7 @@ export default function Lab() {
       );
   }
   function basicHint() {
+    if (unavailableContent) return;
     cancelCoach();
     const level = Math.min(progress.hintLevel, 2);
     setHint(mission.hints[level]);
@@ -554,7 +578,7 @@ export default function Lab() {
     patch(active, { hintLevel: Math.min(progress.hintLevel + 1, 3) });
   }
   async function ask() {
-    if (asking || !question.trim()) return;
+    if (asking || !question.trim() || unavailableContent) return;
     if (!state.profile?.aiConsent) {
       toast(
         "맞춤 힌트는 AI 사용 동의 후 사용할 수 있어요. 준비된 힌트는 바로 볼 수 있어요.",
@@ -574,6 +598,7 @@ export default function Lab() {
       const d = await requestCoach(
         {
           track: active,
+          contentVersion: mission.contentVersion,
           code: progress.code,
           level: Math.min(progress.hintLevel, 2),
           question,
@@ -758,7 +783,10 @@ export default function Lab() {
               </p>
               <button
                 className="btn primary"
-                disabled={!ready}
+                disabled={
+                  !ready ||
+                  (!state.progress.frontend && !canStartMission("frontend"))
+                }
                 onClick={() => start("frontend")}
               >
                 처음이라면 화면 만들기 <ArrowUpRight size={18} />
@@ -766,7 +794,9 @@ export default function Lab() {
             </div>
             <button
               className="featured-task"
-              disabled={!ready}
+              disabled={
+                !ready || (!state.progress.ai && !canStartMission("ai"))
+              }
               onClick={() => start("ai")}
             >
               <div className="featured-label">
@@ -812,12 +842,15 @@ export default function Lab() {
                     <article className={`job-card ${m.color}`} key={m.id}>
                       <button
                         className="job-open"
-                        disabled={!ready}
+                        disabled={!ready || (!p && !canStartMission(m.id))}
                         onClick={() => start(m.id)}
-                        aria-label={`${m.title} ${p ? "이어서 해보기" : "체험 시작"}`}
+                        aria-label={`${m.title} ${p ? "이어서 해보기" : canStartMission(m.id) ? "체험 시작" : "새 체험 준비 중"}`}
                       >
                         <div className="job-art">
                           <Mini id={m.id} />
+                          {!p && !canStartMission(m.id) && (
+                            <span className="job-status">새 체험 준비 중</span>
+                          )}
                           {p && (
                             <span className="job-status">
                               {p.reflection ? (
@@ -870,7 +903,34 @@ export default function Lab() {
           </footer>
         </main>
       )}
-      {view === "work" && (
+      {view === "work" && unavailableContent && (
+        <main className="wrap records-page">
+          <button className="btn secondary" onClick={() => navigate("home")}>
+            체험실로
+          </button>
+          <h1>이전 과제 자료를 찾을 수 없어요.</h1>
+          <p>
+            코드와 회고는 보관하고 있어요. 다른 버전의 테스트나 힌트는 적용하지
+            않아요.
+          </p>
+          <label className="form-label">
+            보관된 코드
+            <textarea
+              readOnly
+              aria-label="보관된 코드"
+              rows={12}
+              value={progress.code}
+            />
+          </label>
+          <button className="btn secondary" onClick={download}>
+            기록 내려받기
+          </button>
+          <button className="btn secondary" onClick={() => navigate("journal")}>
+            나의 기록 보기
+          </button>
+        </main>
+      )}
+      {view === "work" && !unavailableContent && (
         <main className="work wrap">
           <div className="work-heading">
             <div>
@@ -913,6 +973,19 @@ export default function Lab() {
                 <BookOpen size={18} /> 해볼 일
               </div>
               <p>{mission.brief}</p>
+              <details className="ai-details">
+                <summary>시작한 과제 기준</summary>
+                <p>
+                  버전 {mission.contentVersion} · 코드·테스트·힌트를 같은
+                  기준으로 이어가요.
+                </p>
+                {progress.contentVersionSource === "legacy_baseline" && (
+                  <p>
+                    이전 체험은 기존 과제로 이어가요. 예전 실행은 버전을 확인할
+                    수 없어, 다시 실행하면 현재 기준을 기록해요.
+                  </p>
+                )}
+              </details>
               <h2>완성할 조건</h2>
               <ol className="checklist">
                 {mission.steps.map((step, i) => (
@@ -1469,6 +1542,9 @@ export default function Lab() {
                       </div>
                       {r.execution && (
                         <p className="record-execution">
+                          {r.execution.contentVersion
+                            ? `과제 ${r.execution.contentVersion} · `
+                            : "과제 기준 미확인 · "}
                           기록한 실행:{" "}
                           {
                             r.execution.result.tests.filter((t) => t.passed)

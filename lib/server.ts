@@ -16,6 +16,10 @@ const runResult = z.object({
   error: z.string().max(2000).optional(),
 });
 const execution = z.object({
+  contentVersion: z.string().min(1).max(80).optional(),
+  missionId: z
+    .enum(["frontend", "backend", "data", "ai", "security", "cloud"])
+    .optional(),
   id: z.string().uuid(),
   codeHash: z.string().regex(/^[0-9a-f]{64}$/),
   executedAt: z.string().datetime(),
@@ -35,6 +39,8 @@ const reflection = z.object({
 });
 const progress = z.object({
   version: z.literal(1),
+  contentVersion: z.string().min(1).max(80).optional(),
+  contentVersionSource: z.enum(["started", "legacy_baseline"]).optional(),
   code: z.string().max(20000),
   runs: z.number().int().min(0).max(100000),
   codeRevision: z.number().int().min(0).optional(),

@@ -1,3 +1,4 @@
+import { LEGACY_CONTENT_VERSION, missionById } from "./missions.ts";
 import type {
   ExecutionSnapshot,
   LabState,
@@ -76,6 +77,10 @@ export function normalizeLabState(state: LabState): LabState {
         p
           ? {
               ...p,
+              contentVersion: p.contentVersion ?? LEGACY_CONTENT_VERSION,
+              contentVersionSource: p.contentVersion
+                ? (p.contentVersionSource ?? "started")
+                : "legacy_baseline",
               codeRevision: p.codeRevision ?? 0,
               codeSource: p.codeSource ?? "legacy",
             }
@@ -83,6 +88,22 @@ export function normalizeLabState(state: LabState): LabState {
       ]),
     ),
   };
+}
+// Full-state autosaves may edit work, but cannot rebind or silently remove a
+// started session. Explicit deletion uses DELETE /api/state.
+export function keepsStartedVersions(
+  before: LabState | null,
+  after: LabState,
+): boolean {
+  return Object.entries(before?.progress ?? {}).every(([id, previous]) => {
+    const next = after.progress[id as keyof LabState["progress"]];
+    return (
+      !previous ||
+      (!!next &&
+        (previous.contentVersion ?? LEGACY_CONTENT_VERSION) ===
+          (next.contentVersion ?? LEGACY_CONTENT_VERSION))
+    );
+  });
 }
 export function changeCode(
   progress: Progress,
@@ -99,7 +120,8 @@ export function changeCode(
 export function currentExecution(
   progress: Progress,
 ): ExecutionSnapshot | undefined {
-  return progress.lastExecution?.revision === (progress.codeRevision ?? 0)
+  return progress.lastExecution?.revision === (progress.codeRevision ?? 0) &&
+    progress.lastExecution?.contentVersion === progress.contentVersion
     ? progress.lastExecution
     : undefined;
 }
@@ -107,10 +129,22 @@ export function canRecordAttempt(progress: Progress): boolean {
   return currentExecution(progress)?.kind === "edited";
 }
 export function isCompleted(progress: Progress | undefined): boolean {
-  return progress?.reflection?.execution?.kind === "edited";
+  const execution = progress?.reflection?.execution;
+  return (
+    execution?.kind === "edited" &&
+    !!execution.contentVersion &&
+    execution.contentVersion === progress?.contentVersion &&
+    !!execution.missionId &&
+    !!missionById(execution.missionId, execution.contentVersion)
+  );
 }
 export function recordStatus(progress: Progress): string {
   if (isCompleted(progress)) return "체험 완료";
+  if (
+    progress.reflection?.execution &&
+    !progress.reflection.execution.contentVersion
+  )
+    return "이전 기록 · 과제 기준 미확인";
   if (progress.reflection) return "이전 기록 · 실행 미확인";
   return "진행 중";
 }
@@ -121,6 +155,8 @@ export async function snapshotExecution(
   executedAt: string,
   previewArgs: unknown[] = mission.previewArgs,
 ): Promise<ExecutionSnapshot> {
+  if (progress.contentVersion !== mission.contentVersion)
+    throw Error("CONTENT_VERSION_MISMATCH");
   const bytes = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(progress.code),
@@ -135,6 +171,8 @@ export async function snapshotExecution(
           : "unverified";
   return {
     id: crypto.randomUUID(),
+    contentVersion: mission.contentVersion,
+    missionId: mission.id,
     codeHash: Array.from(new Uint8Array(bytes), (b) =>
       b.toString(16).padStart(2, "0"),
     ).join(""),

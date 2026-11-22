@@ -5,7 +5,7 @@ import {
   readBody,
   sameOrigin,
 } from "../../../lib/server";
-import { coachInput, getHint } from "../../../lib/coach";
+import { coachInput, getHint, MissionContentError } from "../../../lib/coach";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -28,7 +28,9 @@ export async function POST(req: Request) {
       model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     });
     return json(result);
-  } catch {
+  } catch (error) {
+    if (error instanceof MissionContentError)
+      return json({ error: error.message }, 409);
     return json(
       { error: "기록 저장소에 연결하지 못했어요. 잠시 후 다시 시도해주세요." },
       503,
