@@ -67,7 +67,7 @@ test("coach reads authoritative mission using a real tool loop before suggesting
     );
     return reply({
       content: JSON.stringify({
-        guideId: "ai/hint/1",
+        intent: "step",
       }),
     });
   };
@@ -80,6 +80,7 @@ test("coach reads authoritative mission using a real tool loop before suggesting
   assert.deepEqual(result.trace, [
     "과제 조건 확인",
     "공식 확인 항목 검토",
+    "다음 단계 질문 확인",
     "과제 근거 대조",
     "검수 힌트 선택",
   ]);
@@ -259,13 +260,33 @@ test("tool rounds share one budget rather than restarting the timeout on each ca
 });
 test("slow usage logging cannot hold a completed request beyond the overall deadline", async () => {
   const store = setup();
-  store.logUsage = () => new Promise(() => {});
+  let outcome,
+    round = 0;
+  store.logUsage = (usage) => {
+    outcome = usage.outcome;
+    return new Promise(() => {});
+  };
   const result = await getHint(input, "owner", store, {
     apiKey: "test",
     model: "test",
     timeoutMs: 20,
-    fetcher: async () =>
-      reply({ content: JSON.stringify({ message: "hint" }) }),
+    fetcher: async () => {
+      const name = ["read_mission", "inspect_checks"][round++];
+      return reply(
+        name
+          ? {
+              tool_calls: [
+                {
+                  id: String(round),
+                  type: "function",
+                  function: { name, arguments: "{}" },
+                },
+              ],
+            }
+          : { content: JSON.stringify({ intent: "step" }) },
+      );
+    },
   });
+  assert.equal(outcome, "success");
   assert.equal(result.source, "guide");
 });

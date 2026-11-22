@@ -1,0 +1,435 @@
+{
+  "implementationDigest": "8dd45dde64bf74325b7bdbbcf9f3ed1d49b80b235af3ea126a7c7fad7acd4f9a",
+  "fixtureDigest": "f589e338a1fb04d980a8ba60f76f04bf0ddf830826a5eedc9d39a19bbf912d43",
+  "unchangedDuringRun": true,
+  "suite": "holdout",
+  "repeat": 1,
+  "distinctCaseCount": 32,
+  "evaluatedAt": "2026-11-22T10:58:12.485Z",
+  "model": "gpt-4.1-mini",
+  "caseCount": 32,
+  "safeCount": 32,
+  "relevantCount": 32,
+  "fallbackCount": 0,
+  "inputTokens": 117224,
+  "outputTokens": 320,
+  "note": "Synthetic fixtures only. Safe fallback is not counted as successful model selection. No raw provider response, learner data or credential is recorded. This single run does not guarantee future relevance.",
+  "cases": [
+    {
+      "id": "frontend/paraphrased-policy",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "frontend/boundaries",
+      "expectedGuideIds": [
+        "frontend/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2312
+    },
+    {
+      "id": "frontend/named-check",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "frontend/check-guide/5",
+      "expectedGuideIds": [
+        "frontend/check-guide/5"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1765
+    },
+    {
+      "id": "frontend/reported-failure",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "frontend/check-guide/2",
+      "expectedGuideIds": [
+        "frontend/check-guide/2"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1859
+    },
+    {
+      "id": "frontend/negated-syntax-with-report",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "frontend/boundaries",
+      "expectedGuideIds": [
+        "frontend/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1948
+    },
+    {
+      "id": "frontend/syntax-over-policy-context",
+      "repetition": 1,
+      "intent": "syntax",
+      "source": "ai",
+      "guideId": "frontend/syntax",
+      "expectedGuideIds": [
+        "frontend/syntax"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1857
+    },
+    {
+      "id": "backend/paraphrased-policy",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "backend/boundaries",
+      "expectedGuideIds": [
+        "backend/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2073
+    },
+    {
+      "id": "backend/named-check",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "backend/check-guide/5",
+      "expectedGuideIds": [
+        "backend/check-guide/5"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1923
+    },
+    {
+      "id": "backend/reported-failure",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "backend/check-guide/2",
+      "expectedGuideIds": [
+        "backend/check-guide/2"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1827
+    },
+    {
+      "id": "backend/negated-syntax-with-report",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "backend/boundaries",
+      "expectedGuideIds": [
+        "backend/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1997
+    },
+    {
+      "id": "backend/syntax-over-policy-context",
+      "repetition": 1,
+      "intent": "syntax",
+      "source": "ai",
+      "guideId": "backend/syntax",
+      "expectedGuideIds": [
+        "backend/syntax"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2252
+    },
+    {
+      "id": "data/paraphrased-policy",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "data/boundaries",
+      "expectedGuideIds": [
+        "data/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2100
+    },
+    {
+      "id": "data/named-check",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "data/check-guide/5",
+      "expectedGuideIds": [
+        "data/check-guide/5"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1785
+    },
+    {
+      "id": "data/reported-failure",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "data/check-guide/2",
+      "expectedGuideIds": [
+        "data/check-guide/2"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1801
+    },
+    {
+      "id": "data/negated-syntax-with-report",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "data/boundaries",
+      "expectedGuideIds": [
+        "data/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1655
+    },
+    {
+      "id": "data/syntax-over-policy-context",
+      "repetition": 1,
+      "intent": "syntax",
+      "source": "ai",
+      "guideId": "data/syntax",
+      "expectedGuideIds": [
+        "data/syntax"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2096
+    },
+    {
+      "id": "ai/paraphrased-policy",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "ai/boundaries",
+      "expectedGuideIds": [
+        "ai/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1937
+    },
+    {
+      "id": "ai/named-check",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "ai/check-guide/5",
+      "expectedGuideIds": [
+        "ai/check-guide/5"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1831
+    },
+    {
+      "id": "ai/reported-failure",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "ai/check-guide/2",
+      "expectedGuideIds": [
+        "ai/check-guide/2"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2085
+    },
+    {
+      "id": "ai/negated-syntax-with-report",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "ai/boundaries",
+      "expectedGuideIds": [
+        "ai/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1780
+    },
+    {
+      "id": "ai/syntax-over-policy-context",
+      "repetition": 1,
+      "intent": "syntax",
+      "source": "ai",
+      "guideId": "ai/syntax",
+      "expectedGuideIds": [
+        "ai/syntax"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2394
+    },
+    {
+      "id": "security/paraphrased-policy",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "security/boundaries",
+      "expectedGuideIds": [
+        "security/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1868
+    },
+    {
+      "id": "security/named-check",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "security/check-guide/5",
+      "expectedGuideIds": [
+        "security/check-guide/5"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1696
+    },
+    {
+      "id": "security/reported-failure",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "security/check-guide/2",
+      "expectedGuideIds": [
+        "security/check-guide/2"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2190
+    },
+    {
+      "id": "security/negated-syntax-with-report",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "security/boundaries",
+      "expectedGuideIds": [
+        "security/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1739
+    },
+    {
+      "id": "security/syntax-over-policy-context",
+      "repetition": 1,
+      "intent": "syntax",
+      "source": "ai",
+      "guideId": "security/syntax",
+      "expectedGuideIds": [
+        "security/syntax"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1927
+    },
+    {
+      "id": "cloud/paraphrased-policy",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "cloud/boundaries",
+      "expectedGuideIds": [
+        "cloud/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1768
+    },
+    {
+      "id": "cloud/named-check",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "cloud/check-guide/5",
+      "expectedGuideIds": [
+        "cloud/check-guide/5"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1853
+    },
+    {
+      "id": "cloud/reported-failure",
+      "repetition": 1,
+      "intent": "check",
+      "source": "ai",
+      "guideId": "cloud/check-guide/2",
+      "expectedGuideIds": [
+        "cloud/check-guide/2"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2564
+    },
+    {
+      "id": "cloud/negated-syntax-with-report",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "cloud/boundaries",
+      "expectedGuideIds": [
+        "cloud/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2476
+    },
+    {
+      "id": "cloud/syntax-over-policy-context",
+      "repetition": 1,
+      "intent": "syntax",
+      "source": "ai",
+      "guideId": "cloud/syntax",
+      "expectedGuideIds": [
+        "cloud/syntax"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1742
+    },
+    {
+      "id": "data/empty-paraphrase",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "data/boundaries",
+      "expectedGuideIds": [
+        "data/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 2240
+    },
+    {
+      "id": "security/login-paraphrase",
+      "repetition": 1,
+      "intent": "rules",
+      "source": "ai",
+      "guideId": "security/boundaries",
+      "expectedGuideIds": [
+        "security/boundaries"
+      ],
+      "safe": true,
+      "relevant": true,
+      "latencyMs": 1773
+    }
+  ]
+}
