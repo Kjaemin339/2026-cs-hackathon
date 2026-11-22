@@ -988,7 +988,8 @@ export default function Lab() {
                   autoCapitalize="off"
                   autoCorrect="off"
                   value={progress.code}
-                  disabled={running}
+                  readOnly={running}
+                  aria-busy={running}
                   maxLength={20000}
                   onChange={(e) =>
                     patch(active, changeCode(progress, e.target.value, "user"))
@@ -1007,7 +1008,7 @@ export default function Lab() {
                 </span>
                 <button
                   className="btn primary compact"
-                  disabled={running}
+                  aria-disabled={running}
                   onClick={execute}
                 >
                   {running ? (
