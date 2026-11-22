@@ -1,7 +1,7 @@
 // Explicit opt-in live test. Creates and deletes only its own temporary record.
 import assert from "node:assert/strict";
 import { coachGuides } from "../lib/coach-guides.ts";
-import { missions } from "../lib/missions.ts";
+import { missions, initialProgress } from "../lib/missions.ts";
 const base = process.env.LAB_TEST_URL ?? "http://127.0.0.1:3000";
 const availability = await (await fetch(base + "/api/coach")).json();
 assert.equal(availability.available, true, "Real AI is not configured");
@@ -15,6 +15,7 @@ const headers = {
   Cookie: cookie,
 };
 try {
+  const mission = missions.find((m) => m.id === "ai");
   const state = {
     version: 1,
     profile: {
@@ -24,7 +25,7 @@ try {
       purposeSource: "self_reported",
       aiConsent: true,
     },
-    progress: {},
+    progress: { ai: initialProgress(mission) },
   };
   assert.equal(
     (
@@ -36,13 +37,13 @@ try {
     ).status,
     200,
   );
-  const mission = missions.find((m) => m.id === "ai");
   const response = await fetch(base + "/api/coach", {
     method: "POST",
     headers,
     signal: AbortSignal.timeout(55000),
     body: JSON.stringify({
       track: mission.id,
+      contentVersion: mission.contentVersion,
       code: mission.starter,
       level: 0,
       question: "관련 없는 문서가 나와요. 어떤 조건부터 고치면 좋을까요?",
@@ -56,6 +57,7 @@ try {
     "ai",
     result.notice ?? "Expected a real AI response, got a prepared hint",
   );
+  assert.equal(result.contentVersion, mission.contentVersion);
   assert.ok(["rules", "syntax", "step", "check"].includes(result.intent));
   const selected = coachGuides(mission).find((g) => g.id === result.guideId);
   assert.ok(selected, "Expected a reviewed guide for this mission");
@@ -69,6 +71,7 @@ try {
         status: "PASS",
         source: result.source,
         intent: result.intent,
+        contentVersion: result.contentVersion,
         trace: result.trace,
         nextAction: result.nextAction,
         message: result.message,

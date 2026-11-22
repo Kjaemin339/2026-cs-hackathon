@@ -35,7 +35,8 @@ import {
 } from "lucide-react";
 import {
   missions,
-  events,
+  events as originalEvents,
+  canStartMission,
   emptyState,
   initialProgress,
   missionById,
@@ -44,6 +45,7 @@ import {
   type Progress,
   type Profile,
 } from "../lib/missions";
+import { missionForProgress } from "../lib/mission-catalog";
 import { runMission } from "../lib/runner";
 import {
   canRecordAttempt,
@@ -58,6 +60,12 @@ import {
   snapshotExecution,
   updateProfileAnswer,
 } from "../lib/lab-state";
+import {
+  nextActionSuggestion,
+  recommendationContext,
+  makeNextActionPlan,
+  representativeTracks,
+} from "../lib/next-actions";
 import { requestCoach } from "../lib/coach-request";
 import { DeadlineExceeded } from "../lib/async-deadline";
 
@@ -296,6 +304,8 @@ export default function Lab() {
     note: "",
     next: "",
   });
+  const [selectedNextId, setSelectedNextId] = useState("");
+  const [nextReason, setNextReason] = useState("");
   const latest = useRef(state),
     saveChain = useRef(Promise.resolve()),
     saveEpoch = useRef(0),
@@ -303,12 +313,24 @@ export default function Lab() {
     coachController = useRef<AbortController | null>(null),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   latest.current = state;
-  const mission = missionById(active)!,
+  const pinned = state.progress[active];
+  const sessionMission = pinned
+    ? missionForProgress(active, pinned)
+    : missionById(active);
+  const unavailableContent = !sessionMission;
+  const mission = sessionMission ?? missions.find((m) => m.id === active)!,
     storedProgress = state.progress[active] ?? initialProgress(mission),
     progress = {
       ...storedProgress,
       result: currentExecution(storedProgress)?.result,
     };
+  const events = mission.previewArgs[0] as typeof originalEvents;
+  const nextContext = recommendationContext(state, active, reflection);
+  const nextSuggestion = nextActionSuggestion(reflection, active, nextContext);
+  const selectedNext = nextSuggestion?.candidates.find(
+    (c) => c.id === selectedNextId,
+  );
+  const representative = representativeTracks(state);
   const previewArgs = currentExecution(progress)?.previewArgs;
   const previewResult =
     active === "frontend" &&
@@ -317,7 +339,9 @@ export default function Lab() {
       previewArgs[2] !== availableOnly)
       ? undefined
       : progress.result;
-  const recorded = missions.filter((m) => state.progress[m.id]?.reflection);
+  const recorded = missions
+    .filter((m) => state.progress[m.id]?.reflection)
+    .map((m) => missionForProgress(m.id, state.progress[m.id]!) ?? m);
   const completed = recorded.filter((m) => isCompleted(state.progress[m.id]));
   function answerProfile(field: "experience" | "purpose", value: string) {
     setState((s) => ({
@@ -414,6 +438,15 @@ export default function Lab() {
               body: JSON.stringify(snapshot),
               signal: AbortSignal.timeout(8000),
             });
+            if (r.status === 409) {
+              if (latest.current === snapshot) {
+                setSave("과제 기준 확인 필요");
+                toast(
+                  "시작한 과제 기준이 달라 서버에 덮어쓰지 않았어요. 기록을 내려받고 새로고침해주세요.",
+                );
+              }
+              return;
+            }
             if (!r.ok) throw new Error();
             if (latest.current === snapshot) setSave("저장됨");
           } catch {
@@ -497,6 +530,10 @@ export default function Lab() {
     openWork(id);
   }
   function openWork(id: TrackId) {
+    if (!state.progress[id] && !canStartMission(id)) {
+      toast("지금은 새 체험을 준비 중이에요.");
+      return;
+    }
     cancelCoach();
     setActive(id);
     setHint("");
@@ -513,7 +550,7 @@ export default function Lab() {
     navigate("work");
   }
   async function execute() {
-    if (running) return;
+    if (running || unavailableContent) return;
     setRunning(true);
     const code = progress.code;
     const executedAt = new Date().toISOString();
@@ -544,6 +581,7 @@ export default function Lab() {
       );
   }
   function basicHint() {
+    if (unavailableContent) return;
     cancelCoach();
     const level = Math.min(progress.hintLevel, 2);
     setHint(mission.hints[level]);
@@ -554,7 +592,7 @@ export default function Lab() {
     patch(active, { hintLevel: Math.min(progress.hintLevel + 1, 3) });
   }
   async function ask() {
-    if (asking || !question.trim()) return;
+    if (asking || !question.trim() || unavailableContent) return;
     if (!state.profile?.aiConsent) {
       toast(
         "맞춤 힌트는 AI 사용 동의 후 사용할 수 있어요. 준비된 힌트는 바로 볼 수 있어요.",
@@ -574,6 +612,7 @@ export default function Lab() {
       const d = await requestCoach(
         {
           track: active,
+          contentVersion: mission.contentVersion,
           code: progress.code,
           level: Math.min(progress.hintLevel, 2),
           question,
@@ -615,6 +654,15 @@ export default function Lab() {
       }
     }
   }
+  function rateReflection(
+    field: "interest" | "difficulty" | "again",
+    value: number,
+  ) {
+    if (reflection[field] === value) return;
+    setReflection((r) => ({ ...r, [field]: value, next: "" }));
+    setSelectedNextId("");
+    setNextReason("");
+  }
   function openReflection() {
     const r = progress.reflection;
     setReflection(
@@ -628,6 +676,11 @@ export default function Lab() {
           }
         : { interest: 0, difficulty: 0, again: 0, note: "", next: "" },
     );
+    const saved = r?.nextPlan;
+    const execution = currentExecution(progress);
+    const reuse = saved && execution?.id === saved.executionId;
+    setSelectedNextId(reuse ? saved.selectedId : "");
+    setNextReason(reuse ? saved.selectionReason : "");
     setModal("reflection");
   }
   function finishReflection() {
@@ -637,12 +690,25 @@ export default function Lab() {
       !reflection.difficulty ||
       !reflection.again ||
       !reflection.note.trim() ||
-      !reflection.next
+      !selectedNext ||
+      !nextReason.trim()
     )
       return;
+    const execution = currentExecution(progress)!;
+    const nextPlan = makeNextActionPlan(
+      mission,
+      execution.id,
+      reflection,
+      nextContext,
+      selectedNextId,
+      nextReason,
+    );
+    if (!nextPlan || !selectedNext) return;
     patch(active, {
       reflection: {
         ...reflection,
+        next: selectedNext.title,
+        nextPlan,
         endedAt: new Date().toISOString(),
         execution: currentExecution(progress),
       },
@@ -758,7 +824,10 @@ export default function Lab() {
               </p>
               <button
                 className="btn primary"
-                disabled={!ready}
+                disabled={
+                  !ready ||
+                  (!state.progress.frontend && !canStartMission("frontend"))
+                }
                 onClick={() => start("frontend")}
               >
                 처음이라면 화면 만들기 <ArrowUpRight size={18} />
@@ -766,7 +835,9 @@ export default function Lab() {
             </div>
             <button
               className="featured-task"
-              disabled={!ready}
+              disabled={
+                !ready || (!state.progress.ai && !canStartMission("ai"))
+              }
               onClick={() => start("ai")}
             >
               <div className="featured-label">
@@ -812,12 +883,15 @@ export default function Lab() {
                     <article className={`job-card ${m.color}`} key={m.id}>
                       <button
                         className="job-open"
-                        disabled={!ready}
+                        disabled={!ready || (!p && !canStartMission(m.id))}
                         onClick={() => start(m.id)}
-                        aria-label={`${m.title} ${p ? "이어서 해보기" : "체험 시작"}`}
+                        aria-label={`${m.title} ${p ? "이어서 해보기" : canStartMission(m.id) ? "체험 시작" : "새 체험 준비 중"}`}
                       >
                         <div className="job-art">
                           <Mini id={m.id} />
+                          {!p && !canStartMission(m.id) && (
+                            <span className="job-status">새 체험 준비 중</span>
+                          )}
                           {p && (
                             <span className="job-status">
                               {p.reflection ? (
@@ -870,7 +944,34 @@ export default function Lab() {
           </footer>
         </main>
       )}
-      {view === "work" && (
+      {view === "work" && unavailableContent && (
+        <main className="wrap records-page">
+          <button className="btn secondary" onClick={() => navigate("home")}>
+            체험실로
+          </button>
+          <h1>이전 과제 자료를 찾을 수 없어요.</h1>
+          <p>
+            코드와 회고는 보관하고 있어요. 다른 버전의 테스트나 힌트는 적용하지
+            않아요.
+          </p>
+          <label className="form-label">
+            보관된 코드
+            <textarea
+              readOnly
+              aria-label="보관된 코드"
+              rows={12}
+              value={progress.code}
+            />
+          </label>
+          <button className="btn secondary" onClick={download}>
+            기록 내려받기
+          </button>
+          <button className="btn secondary" onClick={() => navigate("journal")}>
+            나의 기록 보기
+          </button>
+        </main>
+      )}
+      {view === "work" && !unavailableContent && (
         <main className="work wrap">
           <div className="work-heading">
             <div>
@@ -913,6 +1014,19 @@ export default function Lab() {
                 <BookOpen size={18} /> 해볼 일
               </div>
               <p>{mission.brief}</p>
+              <details className="ai-details">
+                <summary>시작한 과제 기준</summary>
+                <p>
+                  버전 {mission.contentVersion} · 코드·테스트·힌트를 같은
+                  기준으로 이어가요.
+                </p>
+                {progress.contentVersionSource === "legacy_baseline" && (
+                  <p>
+                    이전 체험은 기존 과제로 이어가요. 예전 실행은 버전을 확인할
+                    수 없어, 다시 실행하면 현재 기준을 기록해요.
+                  </p>
+                )}
+              </details>
               <h2>완성할 조건</h2>
               <ol className="checklist">
                 {mission.steps.map((step, i) => (
@@ -988,7 +1102,8 @@ export default function Lab() {
                   autoCapitalize="off"
                   autoCorrect="off"
                   value={progress.code}
-                  disabled={running}
+                  readOnly={running}
+                  aria-busy={running}
                   maxLength={20000}
                   onChange={(e) =>
                     patch(active, changeCode(progress, e.target.value, "user"))
@@ -1007,7 +1122,7 @@ export default function Lab() {
                 </span>
                 <button
                   className="btn primary compact"
-                  disabled={running}
+                  aria-disabled={running}
                   onClick={execute}
                 >
                   {running ? (
@@ -1035,16 +1150,45 @@ export default function Lab() {
                 ).map(([id, label]) => (
                   <button
                     key={id}
+                    id={`output-tab-${id}`}
                     role="tab"
                     aria-selected={tab === id}
+                    aria-controls="output-panel"
+                    tabIndex={tab === id ? 0 : -1}
                     className={tab === id ? "active" : ""}
                     onClick={() => setTab(id)}
+                    onKeyDown={(e) => {
+                      const ids = ["preview", "tests", "data"] as const;
+                      const i = ids.indexOf(id);
+                      const next =
+                        e.key === "ArrowRight"
+                          ? (i + 1) % ids.length
+                          : e.key === "ArrowLeft"
+                            ? (i + ids.length - 1) % ids.length
+                            : e.key === "Home"
+                              ? 0
+                              : e.key === "End"
+                                ? ids.length - 1
+                                : -1;
+                      if (next < 0) return;
+                      e.preventDefault();
+                      setTab(ids[next]);
+                      document
+                        .getElementById(`output-tab-${ids[next]}`)
+                        ?.focus();
+                    }}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              <div className="output-panel">
+              <div
+                className="output-panel"
+                id="output-panel"
+                role="tabpanel"
+                tabIndex={0}
+                aria-labelledby={`output-tab-${tab}`}
+              >
                 {tab === "preview" && (
                   <>
                     {active === "frontend" && (
@@ -1439,6 +1583,9 @@ export default function Lab() {
                       </div>
                       {r.execution && (
                         <p className="record-execution">
+                          {r.execution.contentVersion
+                            ? `과제 ${r.execution.contentVersion} · `
+                            : "과제 기준 미확인 · "}
                           기록한 실행:{" "}
                           {
                             r.execution.result.tests.filter((t) => t.passed)
@@ -1454,6 +1601,16 @@ export default function Lab() {
                       <div className="next-action">
                         <span>다음에 해볼 일</span>
                         <b>{r.next}</b>
+                        {r.nextPlan && (
+                          <>
+                            <p className="next-plan-reason">
+                              선택 당시 제안: {r.nextPlan.reason}
+                            </p>
+                            <p className="next-plan-choice">
+                              내 선택 이유: {r.nextPlan.selectionReason}
+                            </p>
+                          </>
+                        )}
                       </div>
                       <div className="record-foot">
                         <small>
@@ -1598,12 +1755,31 @@ export default function Lab() {
               <section className="compare-insight">
                 <Lightbulb size={27} />
                 <div>
-                  <h2>어려웠지만 재미있었던 작업이 있었나요?</h2>
+                  <h2>흥미를 가장 높게 답한 체험의 다음 활동</h2>
                   <p>
-                    흥미가 높고 다시 해보고 싶다면, 필요한 기초를 조금 보충한 뒤
-                    다음 작은 과제를 시도해보세요. 이 결과는 이번 미션에 대한
-                    나의 회고이며 직무 적성을 확정하지 않아요.
+                    {representative.length > 1
+                      ? "같은 점수의 체험은 함께 보여드려요. 먼저 해볼 활동은 직접 골라보세요."
+                      : "이번 회고에서 고른 후속 활동이에요."}{" "}
+                    직무 적성을 판정하지 않아요.
                   </p>
+                  <ul className="representative-actions">
+                    {representative.map((id) => {
+                      const saved = state.progress[id]!.reflection!;
+                      return (
+                        <li key={id}>
+                          <strong>
+                            {missions.find((m) => m.id === id)!.title}
+                          </strong>
+                          <span>{saved.next}</span>
+                          {saved.nextPlan && (
+                            <small>
+                              내 선택 이유: {saved.nextPlan.selectionReason}
+                            </small>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                   <small>
                     체험 전 경험:{" "}
                     {profileAnswerLabel(state.profile, "experience")} · 탐색
@@ -1762,31 +1938,29 @@ export default function Lab() {
                   <Rating
                     label="이 작업이 흥미로웠나요?"
                     value={reflection.interest}
-                    onChange={(n) =>
-                      setReflection((r) => ({ ...r, interest: n }))
-                    }
+                    onChange={(n) => rateReflection("interest", n)}
                     low="별로였어요"
                     high="아주 흥미로웠어요"
                   />
                   <Rating
                     label="얼마나 어렵게 느껴졌나요?"
                     value={reflection.difficulty}
-                    onChange={(n) =>
-                      setReflection((r) => ({ ...r, difficulty: n }))
-                    }
+                    onChange={(n) => rateReflection("difficulty", n)}
                     low="쉬웠어요"
                     high="많이 어려웠어요"
                   />
                   <Rating
                     label="비슷한 작업을 다시 해보고 싶나요?"
                     value={reflection.again}
-                    onChange={(n) => setReflection((r) => ({ ...r, again: n }))}
+                    onChange={(n) => rateReflection("again", n)}
                     low="아직은 아니에요"
                     high="다시 해보고 싶어요"
                   />
                 </div>
                 <label className="form-label">
-                  재미있거나 막혔던 순간, 그리고 그 이유
+                  {active === "data"
+                    ? "눈여겨본 수치와 다음 행사 개선안"
+                    : "재미있거나 막혔던 순간, 그리고 그 이유"}
                   <textarea
                     rows={3}
                     maxLength={2000}
@@ -1796,27 +1970,61 @@ export default function Lab() {
                     }
                     placeholder={
                       active === "data"
-                        ? "어떤 숫자를 비교했고, 무엇을 더 확인해보고 싶나요?"
+                        ? "예: 진로 참여율이 67%(3명 중 2명)였어요. 다음에는 행사 전에 알림을 보내보고 싶어요."
                         : "어떤 부분을 바꿀 때 재미있었나요? 어려웠던 이유는 무엇인가요?"
                     }
                   />
                 </label>
-                <label className="form-label">
-                  다음에 해볼 작은 일
-                  <select
-                    value={reflection.next}
-                    onChange={(e) =>
-                      setReflection((r) => ({ ...r, next: e.target.value }))
-                    }
-                  >
-                    <option value="">하나를 골라주세요</option>
-                    {mission.next.map((n) => (
-                      <option key={n}>{n}</option>
-                    ))}
-                    <option>기초 문법을 보충하고 다시 체험하기</option>
-                    <option>다른 분야의 작업도 체험하기</option>
-                  </select>
-                </label>
+                <fieldset
+                  className="next-suggestions"
+                  aria-describedby="next-action-explanation"
+                >
+                  <legend>다음에 해볼 작은 일</legend>
+                  {nextSuggestion ? (
+                    <>
+                      <p
+                        className="suggestion-reason"
+                        id="next-action-explanation"
+                      >
+                        {nextSuggestion.reason}
+                      </p>
+                      {nextSuggestion.candidates.map((candidate) => (
+                        <label className="next-option" key={candidate.id}>
+                          <input
+                            type="radio"
+                            name="next-activity"
+                            value={candidate.id}
+                            checked={selectedNextId === candidate.id}
+                            onChange={() => {
+                              setSelectedNextId(candidate.id);
+                              setNextReason("");
+                            }}
+                          />
+                          <span>{candidate.title}</span>
+                        </label>
+                      ))}
+                    </>
+                  ) : (
+                    <p
+                      className="suggestion-reason"
+                      id="next-action-explanation"
+                    >
+                      세 가지 점수를 고르면 다음 활동을 제안해요.
+                    </p>
+                  )}
+                </fieldset>
+                {selectedNext && (
+                  <label className="form-label">
+                    이 활동을 고른 이유
+                    <input
+                      type="text"
+                      value={nextReason}
+                      maxLength={300}
+                      onChange={(e) => setNextReason(e.target.value)}
+                      placeholder="예: 재미있었지만 조건문을 더 연습하고 싶어서요."
+                    />
+                  </label>
+                )}
                 <button
                   className="btn primary full"
                   onClick={finishReflection}
@@ -1826,7 +2034,8 @@ export default function Lab() {
                     !reflection.difficulty ||
                     !reflection.again ||
                     !reflection.note.trim() ||
-                    !reflection.next
+                    !selectedNext ||
+                    !nextReason.trim()
                   }
                 >
                   경험 기록하기

@@ -1,3 +1,4 @@
+import { keepsStartedVersions } from "../../../lib/lab-state";
 import {
   getStorage,
   identity,
@@ -40,6 +41,15 @@ export async function POST(req: Request) {
   }
   try {
     const store = await getStorage();
+    const previous = await store.read(id.key);
+    if (!keepsStartedVersions(previous?.state ?? null, state))
+      return json(
+        {
+          error:
+            "시작한 과제 기준이 달라 저장하지 않았어요. 기기 초안을 내려받고 새로고침해주세요.",
+        },
+        409,
+      );
     await store.save(id.key, state);
     return json(
       { savedAt: new Date().toISOString() },
