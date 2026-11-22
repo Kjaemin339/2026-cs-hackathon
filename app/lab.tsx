@@ -1036,16 +1036,45 @@ export default function Lab() {
                 ).map(([id, label]) => (
                   <button
                     key={id}
+                    id={`output-tab-${id}`}
                     role="tab"
                     aria-selected={tab === id}
+                    aria-controls="output-panel"
+                    tabIndex={tab === id ? 0 : -1}
                     className={tab === id ? "active" : ""}
                     onClick={() => setTab(id)}
+                    onKeyDown={(e) => {
+                      const ids = ["preview", "tests", "data"] as const;
+                      const i = ids.indexOf(id);
+                      const next =
+                        e.key === "ArrowRight"
+                          ? (i + 1) % ids.length
+                          : e.key === "ArrowLeft"
+                            ? (i + ids.length - 1) % ids.length
+                            : e.key === "Home"
+                              ? 0
+                              : e.key === "End"
+                                ? ids.length - 1
+                                : -1;
+                      if (next < 0) return;
+                      e.preventDefault();
+                      setTab(ids[next]);
+                      document
+                        .getElementById(`output-tab-${ids[next]}`)
+                        ?.focus();
+                    }}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              <div className="output-panel">
+              <div
+                className="output-panel"
+                id="output-panel"
+                role="tabpanel"
+                tabIndex={0}
+                aria-labelledby={`output-tab-${tab}`}
+              >
                 {tab === "preview" && (
                   <>
                     {active === "frontend" && (
