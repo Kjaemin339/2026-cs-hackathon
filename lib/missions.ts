@@ -604,6 +604,23 @@ export type RunResult = {
   preview?: unknown;
   error?: string;
 };
+export type ExecutionSnapshot = {
+  id: string;
+  codeHash: string;
+  executedAt: string;
+  revision: number;
+  kind: "edited" | "reference" | "starter" | "unverified";
+  previewArgs?: unknown[];
+  result: RunResult;
+};
+export type AnswerSource = "self_reported" | "unknown" | "legacy_unverified";
+export type Profile = {
+  experience: string | null;
+  experienceSource: AnswerSource;
+  purpose: string | null;
+  purposeSource: AnswerSource;
+  aiConsent: boolean;
+};
 export type Reflection = {
   interest: number;
   difficulty: number;
@@ -611,11 +628,15 @@ export type Reflection = {
   note: string;
   next: string;
   endedAt: string;
+  execution?: ExecutionSnapshot;
 };
 export type Progress = {
   version: 1;
   code: string;
   runs: number;
+  codeRevision?: number;
+  codeSource?: "user" | "reference" | "starter" | "legacy";
+  lastExecution?: ExecutionSnapshot;
   hintLevel: number;
   usedSolution: boolean;
   result?: RunResult;
@@ -624,7 +645,7 @@ export type Progress = {
 };
 export type LabState = {
   version: 1;
-  profile?: { experience: string; purpose: string; aiConsent: boolean };
+  profile?: Profile;
   progress: Partial<Record<TrackId, Progress>>;
 };
 export const emptyState = (): LabState => ({ version: 1, progress: {} });
@@ -632,6 +653,8 @@ export const initialProgress = (m: Mission): Progress => ({
   version: 1,
   code: m.starter,
   runs: 0,
+  codeRevision: 0,
+  codeSource: "starter",
   hintLevel: 0,
   usedSolution: false,
   updatedAt: new Date().toISOString(),

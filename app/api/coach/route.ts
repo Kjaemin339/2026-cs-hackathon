@@ -24,6 +24,7 @@ export async function POST(req: Request) {
   try {
     const result = await getHint(body, identity(req).key, await getStorage(), {
       apiKey: process.env.OPENAI_API_KEY,
+      signal: req.signal,
       model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     });
     return json(result);
