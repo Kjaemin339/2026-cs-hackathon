@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     const store = await getStorage();
     const saved = await store.read(id.key);
     return json(
-      { state: saved?.state ?? null },
+      { state: saved ? stateSchema.parse(saved.state) : null },
       200,
       id.cookie ? { "Set-Cookie": id.cookie } : {},
     );

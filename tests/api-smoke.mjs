@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-const base = process.env.LAB_TEST_URL ?? "http://127.0.0.1:5173";
+import { normalizeLabState } from "../lib/lab-state.ts";
+const base = process.env.LAB_TEST_URL ?? "http://127.0.0.1:3000";
 const first = await fetch(base + "/api/state");
 assert.equal(first.status, 200);
 const cookie = first.headers.get("set-cookie")?.split(";")[0];
@@ -31,7 +32,7 @@ assert.deepEqual(
       await fetch(base + "/api/state", { headers: { Cookie: cookie } })
     ).json()
   ).state,
-  state,
+  normalizeLabState(state),
 );
 assert.equal((await (await fetch(base + "/api/state")).json()).state, null);
 assert.equal(
@@ -54,6 +55,35 @@ assert.equal(
   ).status,
   400,
 );
+// Explicit answers and their execution evidence survive the actual storage round trip.
+const answered = {
+  ...state,
+  profile: {
+    experience: "작은 프로젝트를 해봤어요",
+    experienceSource: "self_reported",
+    purpose: null,
+    purposeSource: "unknown",
+    aiConsent: false,
+  },
+};
+assert.equal(
+  (
+    await fetch(base + "/api/state", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(answered),
+    })
+  ).status,
+  200,
+);
+const restored = (
+  await (
+    await fetch(base + "/api/state", { headers: { Cookie: cookie } })
+  ).json()
+).state;
+assert.equal(restored.profile.experienceSource, "self_reported");
+assert.equal(restored.profile.experience, "작은 프로젝트를 해봤어요");
+assert.equal(restored.profile.purpose, null);
 const coach = await fetch(base + "/api/coach", {
   method: "POST",
   headers,

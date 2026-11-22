@@ -42,8 +42,24 @@ import {
   type LabState,
   type TrackId,
   type Progress,
+  type Profile,
 } from "../lib/missions";
 import { runMission } from "../lib/runner";
+import {
+  canRecordAttempt,
+  changeCode,
+  currentExecution,
+  isCompleted,
+  normalizeLabState,
+  normalizeProfile,
+  profileAnswer,
+  profileAnswerLabel,
+  recordStatus,
+  snapshotExecution,
+  updateProfileAnswer,
+} from "../lib/lab-state";
+import { requestCoach } from "../lib/coach-request";
+import { DeadlineExceeded } from "../lib/async-deadline";
 
 type View = "home" | "work" | "journal" | "compare" | "guide";
 const KEY = "haebogi-lab-v1";
@@ -210,6 +226,44 @@ function Rating({
     </fieldset>
   );
 }
+function ProfileQuestions({
+  profile,
+  onAnswer,
+}: {
+  profile: Profile | undefined;
+  onAnswer: (field: "experience" | "purpose", value: string) => void;
+}) {
+  return (
+    <details className="profile-questions">
+      <summary>체험 전 경험 (선택)</summary>
+      <p>선택하지 않아도 체험을 기록할 수 있어요.</p>
+      <label className="form-label">
+        JavaScript 경험 (선택)
+        <select
+          value={profileAnswer(profile, "experience") ?? ""}
+          onChange={(e) => onAnswer("experience", e.target.value)}
+        >
+          <option value="">미응답</option>
+          <option>아직 처음이에요</option>
+          <option>기초 문법을 배웠어요</option>
+          <option>작은 프로젝트를 해봤어요</option>
+        </select>
+      </label>
+      <label className="form-label">
+        탐색 목적 (선택)
+        <select
+          value={profileAnswer(profile, "purpose") ?? ""}
+          onChange={(e) => onAnswer("purpose", e.target.value)}
+        >
+          <option value="">미응답</option>
+          <option>어떤 분야가 재미있는지 알고 싶어요</option>
+          <option>팀 프로젝트에서 맡을 역할을 고르고 싶어요</option>
+          <option>다음에 공부할 주제를 찾고 싶어요</option>
+        </select>
+      </label>
+    </details>
+  );
+}
 export default function Lab() {
   const [view, setView] = useState<View>("home"),
     [state, setState] = useState<LabState>(emptyState),
@@ -220,9 +274,7 @@ export default function Lab() {
     [modal, setModal] = useState<
       "reflection" | "reset" | "delete" | "solution" | null
     >(null);
-  const [experience, setExperience] = useState("기초 문법을 배웠어요"),
-    [purpose, setPurpose] = useState("어떤 분야가 재미있는지 알고 싶어요"),
-    [aiAvailable, setAiAvailable] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState(false);
   const [running, setRunning] = useState(false),
     [tab, setTab] = useState<"preview" | "tests" | "data">("preview"),
     [category, setCategory] = useState("개발"),
@@ -245,17 +297,44 @@ export default function Lab() {
     saveChain = useRef(Promise.resolve()),
     saveEpoch = useRef(0),
     coachEpoch = useRef(0),
+    coachController = useRef<AbortController | null>(null),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   latest.current = state;
   const mission = missionById(active)!,
-    progress = state.progress[active] ?? initialProgress(mission);
-  const completed = missions.filter((m) => state.progress[m.id]?.reflection);
+    storedProgress = state.progress[active] ?? initialProgress(mission),
+    progress = {
+      ...storedProgress,
+      result: currentExecution(storedProgress)?.result,
+    };
+  const previewArgs = currentExecution(progress)?.previewArgs;
+  const previewResult =
+    active === "frontend" &&
+    (!previewArgs ||
+      previewArgs[1] !== category ||
+      previewArgs[2] !== availableOnly)
+      ? undefined
+      : progress.result;
+  const recorded = missions.filter((m) => state.progress[m.id]?.reflection);
+  const completed = recorded.filter((m) => isCompleted(state.progress[m.id]));
+  function answerProfile(field: "experience" | "purpose", value: string) {
+    setState((s) => ({
+      ...s,
+      profile: updateProfileAnswer(s.profile, field, value),
+    }));
+  }
+  function cancelCoach() {
+    coachEpoch.current += 1;
+    coachController.current?.abort();
+    coachController.current = null;
+    setAsking(false);
+  }
   function toast(message: string) {
     setNotice(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setNotice(""), 4500);
   }
   function navigate(next: View) {
+    cancelCoach();
     setView(next);
     window.scrollTo({ top: 0, behavior: "instant" });
   }
@@ -270,7 +349,7 @@ export default function Lab() {
       }
     };
     const local = cached();
-    if (local) setState(local);
+    if (local) setState(normalizeLabState(local));
     fetch("/api/state", { signal: AbortSignal.timeout(6000) })
       .then((r) => {
         if (!r.ok) throw new Error();
@@ -278,7 +357,7 @@ export default function Lab() {
       })
       .then((data) => {
         if (!alive) return;
-        const remote = data.state as LabState | null;
+        const remote = data.state ? normalizeLabState(data.state) : null;
         if (remote?.version === 1) {
           const merged = { ...remote, progress: { ...remote.progress } };
           for (const m of missions) {
@@ -287,8 +366,8 @@ export default function Lab() {
             if (a && (!b || a.updatedAt > b.updatedAt))
               merged.progress[m.id] = a;
           }
-          if (local?.profile) merged.profile = local.profile;
-          setState(merged);
+          if (local?.profile) merged.profile = normalizeProfile(local.profile);
+          setState(normalizeLabState(merged));
         }
         setSave("저장됨");
       })
@@ -306,6 +385,8 @@ export default function Lab() {
       .catch(() => {});
     return () => {
       alive = false;
+      coachEpoch.current += 1;
+      coachController.current?.abort();
     };
   }, []);
   useEffect(() => {
@@ -339,12 +420,6 @@ export default function Lab() {
     }, 900);
     return () => clearTimeout(timer);
   }, [state, ready]);
-  useEffect(() => {
-    if (state.profile) {
-      setExperience(state.profile.experience);
-      setPurpose(state.profile.purpose);
-    }
-  }, [state.profile]);
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !asking) setModal(null);
@@ -414,13 +489,12 @@ export default function Lab() {
     if (!state.profile)
       setState((s) => ({
         ...s,
-        profile: { experience, purpose, aiConsent: false },
+        profile: normalizeProfile(null),
       }));
     openWork(id);
   }
   function openWork(id: TrackId) {
-    coachEpoch.current += 1;
-    setAsking(false);
+    cancelCoach();
     setActive(id);
     setHint("");
     setQuestion("");
@@ -438,12 +512,26 @@ export default function Lab() {
     if (running) return;
     setRunning(true);
     const code = progress.code;
+    const executedAt = new Date().toISOString();
     const result = await runMission(
       mission,
       code,
       active === "frontend" ? [events, category, availableOnly] : undefined,
     );
-    patch(active, { result, runs: progress.runs + 1 });
+    const lastExecution = await snapshotExecution(
+      progress,
+      mission,
+      result,
+      executedAt,
+      active === "frontend"
+        ? [events, category, availableOnly]
+        : mission.previewArgs,
+    );
+    patch(active, {
+      lastExecution,
+      result: undefined,
+      runs: progress.runs + 1,
+    });
     setRunning(false);
     if (result.error) setTab("tests");
     else if (result.tests.every((t) => t.passed))
@@ -452,6 +540,7 @@ export default function Lab() {
       );
   }
   function basicHint() {
+    cancelCoach();
     const level = Math.min(progress.hintLevel, 2);
     setHint(mission.hints[level]);
     setHintSource("기본 힌트");
@@ -468,43 +557,34 @@ export default function Lab() {
       return;
     }
     const requestEpoch = ++coachEpoch.current;
+    const controller = new AbortController();
+    coachController.current = controller;
     setAsking(true);
     setHint("");
     setCoachTrace([]);
     setCoachAction("");
     try {
-      await saveChain.current;
-      const saved = await fetch("/api/state", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(latest.current),
-      });
-      if (!saved.ok) throw new Error();
-      const r = await fetch("/api/coach", {
-        method: "POST",
-        signal: AbortSignal.timeout(55000),
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const execution = currentExecution(progress);
+      const d = await requestCoach(
+        {
           track: active,
           code: progress.code,
           level: Math.min(progress.hintLevel, 2),
           question,
-          tests: (progress.result?.tests ?? []).map((t) => ({
+          tests: (execution?.result.tests ?? []).map((t) => ({
             label: t.label,
             passed: t.passed,
             error: t.error,
           })),
-        }),
-      });
-      const d = (await r.json()) as {
-        message: string;
-        source: string;
-        notice?: string;
-        trace?: string[];
-        nextAction?: string;
-      };
+        },
+        {
+          state: latest.current,
+          waitForSave: saveChain.current,
+          signal: controller.signal,
+        },
+      );
       if (requestEpoch !== coachEpoch.current) return;
-      if (!r.ok || typeof d.message !== "string") throw new Error();
+
       setHint(d.message);
       setCoachTrace(d.trace ?? []);
       setCoachAction(d.nextAction ?? "");
@@ -512,13 +592,20 @@ export default function Lab() {
       if (d.notice) toast(d.notice);
       setQuestion("");
       patch(active, { hintLevel: Math.min(progress.hintLevel + 1, 3) });
-    } catch {
+    } catch (error) {
       if (requestEpoch !== coachEpoch.current) return;
       setHint(mission.hints[Math.min(progress.hintLevel, 2)]);
       setHintSource("기본 힌트");
-      toast("연결이 늦어 준비된 힌트를 보여드려요.");
+      toast(
+        error instanceof DeadlineExceeded
+          ? "AI 응답이 늦어 기본 힌트를 보여드려요. 계속 수정하고 실행할 수 있어요."
+          : "맞춤 힌트를 가져오지 못해 기본 힌트를 보여드려요.",
+      );
     } finally {
-      if (requestEpoch === coachEpoch.current) setAsking(false);
+      if (requestEpoch === coachEpoch.current) {
+        coachController.current = null;
+        setAsking(false);
+      }
     }
   }
   function openReflection() {
@@ -537,6 +624,7 @@ export default function Lab() {
     setModal("reflection");
   }
   function finishReflection() {
+    if (!canRecordAttempt(progress)) return;
     if (
       !reflection.interest ||
       !reflection.difficulty ||
@@ -546,7 +634,11 @@ export default function Lab() {
     )
       return;
     patch(active, {
-      reflection: { ...reflection, endedAt: new Date().toISOString() },
+      reflection: {
+        ...reflection,
+        endedAt: new Date().toISOString(),
+        execution: currentExecution(progress),
+      },
     });
     setModal(null);
     navigate("journal");
@@ -565,6 +657,7 @@ export default function Lab() {
   }
   async function erase() {
     try {
+      cancelCoach();
       saveEpoch.current += 1;
       await saveChain.current;
       const r = await fetch("/api/state", {
@@ -582,7 +675,7 @@ export default function Lab() {
     }
   }
   const passed = progress.result?.tests.filter((t) => t.passed).length ?? 0;
-  const hasAttempt = progress.runs > 0 && progress.code !== mission.starter;
+  const hasAttempt = canRecordAttempt(progress);
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -722,7 +815,7 @@ export default function Lab() {
                             <span className="job-status">
                               {p.reflection ? (
                                 <>
-                                  <Check size={12} /> 완료
+                                  <Check size={12} /> {recordStatus(p)}
                                 </>
                               ) : (
                                 "진행 중"
@@ -803,7 +896,7 @@ export default function Lab() {
             <li className={progress.runs ? "current" : ""}>
               <span>2</span> 실행 · 결과 확인
             </li>
-            <li className={progress.reflection ? "done" : ""}>
+            <li className={isCompleted(progress) ? "done" : ""}>
               <span>3</span> 체험 기록
             </li>
           </ol>
@@ -891,7 +984,7 @@ export default function Lab() {
                   disabled={running}
                   maxLength={20000}
                   onChange={(e) =>
-                    patch(active, { code: e.target.value, result: undefined })
+                    patch(active, changeCode(progress, e.target.value, "user"))
                   }
                   onKeyDown={(e) => {
                     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -976,7 +1069,7 @@ export default function Lab() {
                         </label>
                       </div>
                     )}
-                    {!progress.result ? (
+                    {!previewResult ? (
                       <div className="output-empty">
                         <Monitor size={30} />
                         <h3>나의 코드가 만드는 결과</h3>
@@ -986,15 +1079,13 @@ export default function Lab() {
                             : "코드를 실행하면 실제 반환값을 여기에서 확인할 수 있어요."}
                         </p>
                       </div>
-                    ) : progress.result.error ? (
-                      <div className="error-message">
-                        {progress.result.error}
-                      </div>
+                    ) : previewResult.error ? (
+                      <div className="error-message">{previewResult.error}</div>
                     ) : active === "frontend" ? (
                       <div className="events-preview">
-                        {Array.isArray(progress.result.preview) ? (
-                          progress.result.preview.length ? (
-                            progress.result.preview.map(
+                        {Array.isArray(previewResult.preview) ? (
+                          previewResult.preview.length ? (
+                            previewResult.preview.map(
                               (item: unknown, i: number) => {
                                 const event = item as (typeof events)[number];
                                 return (
@@ -1039,11 +1130,11 @@ export default function Lab() {
                         )}
                       </div>
                     ) : active === "data" &&
-                      Array.isArray(progress.result.preview) &&
-                      progress.result.preview.length ? (
+                      Array.isArray(previewResult.preview) &&
+                      previewResult.preview.length ? (
                       <div className="data-result">
                         <h3>카테고리별 참여율</h3>
-                        {progress.result.preview.map(
+                        {previewResult.preview.map(
                           (item: unknown, i: number) => {
                             const x = item as {
                               category?: string;
@@ -1077,7 +1168,7 @@ export default function Lab() {
                       <div className="json-preview">
                         <span>나의 함수 반환값</span>
                         <pre>
-                          {JSON.stringify(progress.result.preview, null, 2) ??
+                          {JSON.stringify(previewResult.preview, null, 2) ??
                             "undefined"}
                         </pre>
                         {active === "backend" && (
@@ -1158,7 +1249,10 @@ export default function Lab() {
                 )}
               </div>
               <div className="workspace-note">
-                <Check size={14} /> 직접 수정하고 실행했다면 기록할 수 있어요.
+                <Check size={14} />{" "}
+                {currentExecution(progress)?.kind === "reference"
+                  ? "참고 풀이를 직접 수정하고 실행하면 기록할 수 있어요."
+                  : "수정한 코드를 실행하면 체험을 기록할 수 있어요."}
               </div>
             </section>
             <aside
@@ -1188,7 +1282,10 @@ export default function Lab() {
                         onChange={() =>
                           setState((s) => ({
                             ...s,
-                            profile: { experience, purpose, aiConsent: true },
+                            profile: {
+                              ...normalizeProfile(s.profile),
+                              aiConsent: true,
+                            },
                           }))
                         }
                       />{" "}
@@ -1224,11 +1321,7 @@ export default function Lab() {
                   </button>
                 </details>
 
-                <button
-                  className="btn soft full"
-                  onClick={basicHint}
-                  disabled={asking}
-                >
+                <button className="btn soft full" onClick={basicHint}>
                   기본 힌트 {Math.min(progress.hintLevel + 1, 3)} 보기
                 </button>
                 {asking && (
@@ -1283,7 +1376,7 @@ export default function Lab() {
             <h1>나의 체험 기록</h1>
             <p>재미있었던 일과 다음에 해볼 일.</p>
           </div>
-          {!completed.length ? (
+          {!recorded.length ? (
             <div className="empty-state">
               <FolderOpen size={42} />
               <h2>첫 경험을 기다리고 있어요.</h2>
@@ -1299,7 +1392,7 @@ export default function Lab() {
           ) : (
             <>
               <div className="record-grid">
-                {completed.map((m) => {
+                {recorded.map((m) => {
                   const p = state.progress[m.id]!,
                     r = p.reflection!;
                   return (
@@ -1308,7 +1401,9 @@ export default function Lab() {
                         <TrackIcon id={m.id} />
                       </div>
                       <div className="record-top">
-                        <span>{m.title}</span>
+                        <span>
+                          {m.title} · {recordStatus(p)}
+                        </span>
                         <small>
                           {new Date(r.endedAt).toLocaleDateString("ko-KR")}
                         </small>
@@ -1325,6 +1420,19 @@ export default function Lab() {
                           다시 해보고 싶음 <b>{r.again}/5</b>
                         </span>
                       </div>
+                      {r.execution && (
+                        <p className="record-execution">
+                          기록한 실행:{" "}
+                          {
+                            r.execution.result.tests.filter((t) => t.passed)
+                              .length
+                          }
+                          /{r.execution.result.tests.length} 통과 ·{" "}
+                          {new Date(r.execution.executedAt).toLocaleString(
+                            "ko-KR",
+                          )}
+                        </p>
+                      )}
                       <p className="record-note">{r.note}</p>
                       <div className="next-action">
                         <span>다음에 해볼 일</span>
@@ -1480,8 +1588,9 @@ export default function Lab() {
                     나의 회고이며 직무 적성을 확정하지 않아요.
                   </p>
                   <small>
-                    체험 전 경험: {state.profile?.experience} · 탐색 목적:{" "}
-                    {state.profile?.purpose}
+                    체험 전 경험:{" "}
+                    {profileAnswerLabel(state.profile, "experience")} · 탐색
+                    목적: {profileAnswerLabel(state.profile, "purpose")}
                   </small>
                 </div>
               </section>
@@ -1553,8 +1662,7 @@ export default function Lab() {
                     setState((s) => ({
                       ...s,
                       profile: {
-                        experience,
-                        purpose,
+                        ...normalizeProfile(s.profile),
                         aiConsent: e.target.checked,
                       },
                     }))
@@ -1629,6 +1737,10 @@ export default function Lab() {
                 </span>
                 <h2 id="modal-title">해보니 어땠나요?</h2>
                 <p>느낀 점을 짧게 남겨요.</p>
+                <ProfileQuestions
+                  profile={state.profile}
+                  onAnswer={answerProfile}
+                />
                 <div className="reflection-ratings">
                   <Rating
                     label="이 작업이 흥미로웠나요?"
@@ -1692,6 +1804,7 @@ export default function Lab() {
                   className="btn primary full"
                   onClick={finishReflection}
                   disabled={
+                    !canRecordAttempt(progress) ||
                     !reflection.interest ||
                     !reflection.difficulty ||
                     !reflection.again ||
@@ -1720,10 +1833,10 @@ export default function Lab() {
                   <button
                     className="btn primary"
                     onClick={() => {
-                      patch(active, {
-                        code: mission.starter,
-                        result: undefined,
-                      });
+                      patch(
+                        active,
+                        changeCode(progress, mission.starter, "starter"),
+                      );
                       setModal(null);
                     }}
                   >
@@ -1750,8 +1863,7 @@ export default function Lab() {
                     className="btn primary"
                     onClick={() => {
                       patch(active, {
-                        code: mission.solution,
-                        result: undefined,
+                        ...changeCode(progress, mission.solution, "reference"),
                         usedSolution: true,
                       });
                       setModal(null);

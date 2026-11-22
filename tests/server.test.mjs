@@ -65,6 +65,11 @@ test("server state preserves all six role records", () => {
   );
   assert.deepEqual(
     stateSchema.parse({ version: 1, progress: records }).progress,
-    records,
+    Object.fromEntries(
+      Object.entries(records).map(([id, p]) => [
+        id,
+        { ...p, codeRevision: 0, codeSource: "legacy" },
+      ]),
+    ),
   );
 });

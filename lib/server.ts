@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeProfile, normalizeLabState } from "./lab-state.ts";
 export { getStorage } from "./storage.ts";
 
 const test = z.object({
@@ -9,6 +10,20 @@ const test = z.object({
   expected: z.unknown().optional(),
   error: z.string().max(1000).optional(),
 });
+const runResult = z.object({
+  tests: z.array(test).max(5),
+  preview: z.unknown(),
+  error: z.string().max(2000).optional(),
+});
+const execution = z.object({
+  id: z.string().uuid(),
+  codeHash: z.string().regex(/^[0-9a-f]{64}$/),
+  executedAt: z.string().datetime(),
+  revision: z.number().int().min(0),
+  kind: z.enum(["edited", "reference", "starter", "unverified"]),
+  previewArgs: z.array(z.unknown()).max(5).optional(),
+  result: runResult,
+});
 const reflection = z.object({
   interest: z.number().int().min(1).max(5),
   difficulty: z.number().int().min(1).max(5),
@@ -16,41 +31,48 @@ const reflection = z.object({
   note: z.string().max(2000),
   next: z.string().max(300),
   endedAt: z.string().datetime(),
+  execution: execution.optional(),
 });
 const progress = z.object({
   version: z.literal(1),
   code: z.string().max(20000),
   runs: z.number().int().min(0).max(100000),
+  codeRevision: z.number().int().min(0).optional(),
+  codeSource: z.enum(["user", "reference", "starter", "legacy"]).optional(),
+  lastExecution: execution.optional(),
   hintLevel: z.number().int().min(0).max(3),
   usedSolution: z.boolean(),
-  result: z
-    .object({
-      tests: z.array(test).max(5),
-      preview: z.unknown(),
-      error: z.string().max(2000).optional(),
-    })
-    .optional(),
+  result: runResult.optional(),
   reflection: reflection.optional(),
   updatedAt: z.string().datetime(),
 });
-export const stateSchema = z.object({
-  version: z.literal(1),
-  profile: z
-    .object({
-      experience: z.string().max(120),
-      purpose: z.string().max(200),
-      aiConsent: z.boolean(),
-    })
-    .optional(),
-  progress: z.object({
-    frontend: progress.optional(),
-    backend: progress.optional(),
-    data: progress.optional(),
-    ai: progress.optional(),
-    security: progress.optional(),
-    cloud: progress.optional(),
-  }),
-});
+export const stateSchema = z
+  .object({
+    version: z.literal(1),
+    profile: z
+      .object({
+        experience: z.string().max(120).nullable().optional(),
+        experienceSource: z
+          .enum(["self_reported", "unknown", "legacy_unverified"])
+          .optional(),
+        purpose: z.string().max(200).nullable().optional(),
+        purposeSource: z
+          .enum(["self_reported", "unknown", "legacy_unverified"])
+          .optional(),
+        aiConsent: z.boolean(),
+      })
+      .transform(normalizeProfile)
+      .optional(),
+    progress: z.object({
+      frontend: progress.optional(),
+      backend: progress.optional(),
+      data: progress.optional(),
+      ai: progress.optional(),
+      security: progress.optional(),
+      cloud: progress.optional(),
+    }),
+  })
+  .transform(normalizeLabState);
 export function json(
   data: unknown,
   status = 200,
