@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { LEGACY_CONTENT_VERSION } from "../lib/missions.ts";
 import { identity, sameOrigin, stateSchema } from "../lib/server.ts";
 test("browser-facing Host is used while foreign origins and forwarded-host spoofing are rejected", () => {
   const request = (origin, extra = {}) =>
@@ -68,7 +69,13 @@ test("server state preserves all six role records", () => {
     Object.fromEntries(
       Object.entries(records).map(([id, p]) => [
         id,
-        { ...p, codeRevision: 0, codeSource: "legacy" },
+        {
+          ...p,
+          contentVersion: LEGACY_CONTENT_VERSION,
+          contentVersionSource: "legacy_baseline",
+          codeRevision: 0,
+          codeSource: "legacy",
+        },
       ]),
     ),
   );
