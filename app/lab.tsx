@@ -281,6 +281,9 @@ export default function Lab() {
     [availableOnly, setAvailableOnly] = useState(true);
   const [group, setGroup] = useState("all"),
     [coachTrace, setCoachTrace] = useState<string[]>([]),
+    [coachReferences, setCoachReferences] = useState<
+      { id: string; label: string }[]
+    >([]),
     [coachAction, setCoachAction] = useState(""),
     [hint, setHint] = useState(""),
     [hintSource, setHintSource] = useState(""),
@@ -500,6 +503,7 @@ export default function Lab() {
     setQuestion("");
     setHintSource("");
     setCoachTrace([]);
+    setCoachReferences([]);
     setCoachAction("");
     setCategory("개발");
     setAvailableOnly(true);
@@ -545,6 +549,7 @@ export default function Lab() {
     setHint(mission.hints[level]);
     setHintSource("기본 힌트");
     setCoachTrace([]);
+    setCoachReferences([]);
     setCoachAction("");
     patch(active, { hintLevel: Math.min(progress.hintLevel + 1, 3) });
   }
@@ -562,6 +567,7 @@ export default function Lab() {
     setAsking(true);
     setHint("");
     setCoachTrace([]);
+    setCoachReferences([]);
     setCoachAction("");
     try {
       const execution = currentExecution(progress);
@@ -587,8 +593,9 @@ export default function Lab() {
 
       setHint(d.message);
       setCoachTrace(d.trace ?? []);
+      setCoachReferences(d.references ?? []);
       setCoachAction(d.nextAction ?? "");
-      setHintSource(d.source === "ai" ? "AI 코치" : "기본 힌트");
+      setHintSource(d.source === "ai" ? "AI가 고른 힌트" : "기본 힌트");
       if (d.notice) toast(d.notice);
       setQuestion("");
       patch(active, { hintLevel: Math.min(progress.hintLevel + 1, 3) });
@@ -1264,7 +1271,7 @@ export default function Lab() {
                 <h2>
                   <MessageCircle size={18} /> AI 코치
                 </h2>
-                <p>코드와 실행 결과에서 다음 한 단계를 찾아요.</p>
+                <p>코드와 질문에 맞는 검수 힌트를 골라요.</p>
                 <details className="ai-details" open={aiAvailable}>
                   <summary>
                     <Sparkles size={15} /> 질문하기
@@ -1344,6 +1351,16 @@ export default function Lab() {
                       </ol>
                     )}
                     <p>{hint}</p>
+                    {coachReferences.length > 0 && (
+                      <details className="ai-details">
+                        <summary>과제 근거 보기</summary>
+                        <ul>
+                          {coachReferences.map((ref) => (
+                            <li key={ref.id}>{ref.label}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                     {coachAction && (
                       <button
                         className="coach-next"
@@ -1650,9 +1667,9 @@ export default function Lab() {
               <h2>AI는 어떻게 사용하나요?</h2>
               <p>
                 AI 연결과 동의가 있는 경우에만 현재 코드, 질문, 테스트 결과,
-                선택한 경험 수준을 OpenAI에 보내 맞춤 힌트를 받아요. AI가
-                연결되지 않아도 준비된 힌트로 모든 체험을 진행할 수 있어요.
-                비밀키와 개인정보는 코드나 질문에 입력하지 마세요.
+                선택한 경험 수준을 OpenAI에 보내 검수된 힌트 중 맞는 내용을
+                골라요. AI가 연결되지 않아도 준비된 힌트로 모든 체험을 진행할 수
+                있어요. 비밀키와 개인정보는 코드나 질문에 입력하지 마세요.
               </p>
               <label className="consent-inline">
                 <input

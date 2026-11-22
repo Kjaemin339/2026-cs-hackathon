@@ -7,6 +7,8 @@ export type CoachReply = {
   notice?: string;
   trace?: string[];
   nextAction?: string;
+  guideId?: string;
+  references?: { id: string; label: string; kind: "requirement" | "check" }[];
 };
 export function requestCoach(
   body: CoachInput,
