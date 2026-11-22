@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   FlaskConical,
@@ -756,13 +757,18 @@ export default function Lab() {
               <p className="welcome-description">
                 설치 없이 작은 업무 하나로 시작해요.
               </p>
-              <button
-                className="btn primary"
-                disabled={!ready}
-                onClick={() => start("frontend")}
-              >
-                처음이라면 화면 만들기 <ArrowUpRight size={18} />
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className="btn primary"
+                  disabled={!ready}
+                  onClick={() => start("frontend")}
+                >
+                  처음이라면 화면 만들기 <ArrowUpRight size={18} />
+                </button>
+                <Link className="btn soft" href="/games">
+                  게임으로 배우기 <ArrowUpRight size={18} />
+                </Link>
+              </div>
             </div>
             <button
               className="featured-task"
