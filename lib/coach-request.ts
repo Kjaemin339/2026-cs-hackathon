@@ -18,6 +18,7 @@ export function requestCoach(
     signal: AbortSignal;
     fetcher?: typeof fetch;
     timeoutMs?: number;
+    saveState?: (signal: AbortSignal) => Promise<Response>;
   },
 ): Promise<CoachReply> {
   const fetcher = options.fetcher ?? fetch;
@@ -25,12 +26,14 @@ export function requestCoach(
     await abortable(options.waitForSave, signal);
     signal.throwIfAborted();
     const saved = await abortable(
-      fetcher("/api/state", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(options.state),
-        signal,
-      }),
+      options.saveState
+        ? options.saveState(signal)
+        : fetcher("/api/state", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(options.state),
+            signal,
+          }),
       signal,
     );
     if (!saved.ok) throw new Error("STATE_SAVE_FAILED");

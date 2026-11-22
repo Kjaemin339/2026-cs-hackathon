@@ -297,6 +297,65 @@ nav > button.active:after {
   color: #5f6b7a;
   white-space: nowrap;
 }
+.save-state.error,
+.save-state.conflict {
+  color: #a52b32;
+}
+.save-state time {
+  color: var(--muted);
+  font-size: 11px;
+}
+.mobile-save-state {
+  display: none;
+}
+@media (max-width: 760px) {
+  .mobile-save-state {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 18px;
+    background: #f6f8fc;
+    color: #536174;
+    font-size: 11px;
+  }
+  .mobile-save-state.error,
+  .mobile-save-state.conflict {
+    color: #a52b32;
+  }
+}
+.storage-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px max(24px, calc((100vw - 1200px) / 2));
+  background: #fff4dd;
+  color: #55431d;
+  font-size: 14px;
+}
+.storage-banner p {
+  margin: 5px 0 0;
+}
+.storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.retention-details {
+  max-width: 680px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.retention-details summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.retention-details p {
+  margin: 8px 0;
+}
 .loading-strip {
   background: var(--soft-blue);
   font-size: 13px;
@@ -1354,8 +1413,8 @@ nav > button.active:after {
   .nav-end {
     gap: 15px;
   }
-  .save-state > span {
-    display: none;
+  .save-state {
+    font-size: 11px;
   }
   .work-grid {
     grid-template-columns: 270px 1fr;

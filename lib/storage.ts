@@ -1,11 +1,15 @@
 import { neon } from "@neondatabase/serverless";
 import type { LabState } from "./missions";
+import { RETENTION_MS } from "./retention.ts";
+
+export class RecordDeleted extends Error {}
 
 type SavedState = { state: LabState; updatedAt: number };
 export interface LabStorage {
   read(owner: string): Promise<SavedState | null>;
-  save(owner: string, state: LabState): Promise<void>;
+  save(owner: string, state: LabState): Promise<number>;
   remove(owner: string): Promise<void>;
+  cleanup(): Promise<{ states: number; calls: number; usage: number }>;
   reserve(owner: string, track: string): Promise<boolean>;
   logUsage(entry: {
     owner: string;
@@ -17,13 +21,12 @@ export interface LabStorage {
   }): Promise<void>;
 }
 
-const TTL = 30 * 86400000;
 type Query = (
   text: string,
   values: unknown[],
 ) => Promise<Record<string, unknown>[]>;
 
-export function createStorage(query: Query): LabStorage {
+export function createStorage(query: Query, now = Date.now): LabStorage {
   return {
     async read(owner) {
       const [row] = await query(
@@ -31,8 +34,12 @@ export function createStorage(query: Query): LabStorage {
         [owner],
       );
       if (!row) return null;
-      if (Number(row.updated_at) < Date.now() - TTL) {
-        await query("DELETE FROM lab_states WHERE owner_key=$1", [owner]);
+      if (row.state === "null" || row.state === null) return null;
+      if (Number(row.updated_at) <= now() - RETENTION_MS) {
+        await query(
+          "DELETE FROM lab_states WHERE owner_key=$1 AND updated_at <= $2",
+          [owner, now() - RETENTION_MS],
+        );
         return null;
       }
       return {
@@ -43,20 +50,46 @@ export function createStorage(query: Query): LabStorage {
       };
     },
     async save(owner, state) {
-      await query(
-        "INSERT INTO lab_states(owner_key,state,updated_at) VALUES ($1,$2,$3) ON CONFLICT(owner_key) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at",
-        [owner, JSON.stringify(state), Date.now()],
+      const timestamp = now();
+      const rows = await query(
+        "INSERT INTO lab_states(owner_key,state,updated_at) VALUES ($1,$2,$3) ON CONFLICT(owner_key) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at WHERE lab_states.state <> 'null' RETURNING updated_at",
+        [owner, JSON.stringify(state), timestamp],
       );
-      await query(
-        "DELETE FROM lab_states WHERE owner_key IN (SELECT owner_key FROM lab_states WHERE updated_at < $1 LIMIT 100)",
-        [Date.now() - TTL],
-      );
+      if (!rows.length) throw new RecordDeleted("RECORD_DELETED");
+      return Number(rows[0].updated_at);
     },
     async remove(owner) {
-      await query("DELETE FROM lab_states WHERE owner_key=$1", [owner]);
+      // JSON null fences old-session writes, including a timed-out request that
+      // reaches the database after deletion. It contains no learner content.
+      await query(
+        "INSERT INTO lab_states(owner_key,state,updated_at) VALUES ($1,$2,$3) ON CONFLICT(owner_key) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at",
+        [owner, "null", now()],
+      );
+      await query("DELETE FROM ai_calls WHERE owner_key=$1", [owner]);
+    },
+    async cleanup() {
+      const cutoff = now() - RETENTION_MS;
+      const states = await query(
+        "DELETE FROM lab_states WHERE updated_at <= $1 RETURNING owner_key",
+        [cutoff],
+      );
+      const calls = await query(
+        "DELETE FROM ai_calls WHERE created_at <= $1 RETURNING id",
+        [cutoff],
+      );
+      // Only UTC days before today; keep today's limits after record deletion.
+      const usage = await query(
+        "DELETE FROM ai_usage WHERE key < $1 RETURNING key",
+        [new Date(now()).toISOString().slice(0, 10) + ":"],
+      );
+      return {
+        states: states.length,
+        calls: calls.length,
+        usage: usage.length,
+      };
     },
     async reserve(owner, track) {
-      const day = new Date().toISOString().slice(0, 10);
+      const day = new Date(now()).toISOString().slice(0, 10);
       const reserve = async (key: string, limit: number) =>
         (
           await query(
@@ -70,8 +103,10 @@ export function createStorage(query: Query): LabStorage {
       return reserve("global", 200);
     },
     async logUsage(e) {
+      // Lock the same owner row that deletion replaces, so an in-flight call
+      // either commits before its logs are erased, or sees the deletion fence.
       await query(
-        "INSERT INTO ai_calls(id,owner_key,model,input_tokens,output_tokens,latency_ms,outcome,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        "INSERT INTO ai_calls(id,owner_key,model,input_tokens,output_tokens,latency_ms,outcome,created_at) SELECT $1,$2,$3,$4,$5,$6,$7,$8 FROM (SELECT owner_key FROM lab_states WHERE owner_key=$9 AND state <> 'null' FOR UPDATE) AS owner",
         [
           crypto.randomUUID(),
           e.owner,
@@ -80,7 +115,8 @@ export function createStorage(query: Query): LabStorage {
           e.outputTokens,
           e.latencyMs,
           e.outcome,
-          Date.now(),
+          now(),
+          e.owner,
         ],
       );
     },
@@ -114,7 +150,8 @@ export async function getStorage(): Promise<LabStorage> {
     "CREATE TABLE IF NOT EXISTS lab_states(owner_key TEXT PRIMARY KEY,state TEXT NOT NULL,updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS ai_usage(key TEXT PRIMARY KEY,count INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS ai_calls(id TEXT PRIMARY KEY,owner_key TEXT NOT NULL,model TEXT NOT NULL,input_tokens INTEGER NOT NULL,output_tokens INTEGER NOT NULL,latency_ms INTEGER NOT NULL,outcome TEXT NOT NULL,created_at INTEGER NOT NULL);",
   );
   cached = createStorage(async (text, values) => {
-    const sqlite = text.replace(/\$\d+/g, "?");
+    // SQLite serializes writes; PostgreSQL needs the owner row lock.
+    const sqlite = text.replace(/ FOR UPDATE/g, "").replace(/\$\d+/g, "?");
     const statement = db.prepare(sqlite);
     return statement.all(...(values as (string | number | null)[])) as Record<
       string,
