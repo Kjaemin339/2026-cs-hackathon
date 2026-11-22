@@ -98,3 +98,23 @@ test("a hanging save request times out before contacting the AI endpoint", async
   );
   assert.equal(calls, 1);
 });
+
+test("coach pre-save uses the shared persistence queue when provided", async () => {
+  let queued = 0;
+  const calls = [];
+  const result = await requestCoach(input, {
+    ...options(),
+    saveState: async (signal) => {
+      assert.equal(signal.aborted, false);
+      queued++;
+      return Response.json({});
+    },
+    fetcher: async (url) => {
+      calls.push(url);
+      return Response.json({ source: "ai", message: "reviewed hint" });
+    },
+  });
+  assert.equal(queued, 1);
+  assert.deepEqual(calls, ["/api/coach"]);
+  assert.equal(result.source, "ai");
+});
