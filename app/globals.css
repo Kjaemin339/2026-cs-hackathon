@@ -294,7 +294,7 @@ nav > button.active:after {
   gap: 5px;
   align-items: center;
   font-size: 12px;
-  color: #7d8798;
+  color: #5f6b7a;
   white-space: nowrap;
 }
 .loading-strip {
@@ -348,13 +348,13 @@ nav > button.active:after {
   border-top: 1px solid #e7eaf0;
   font-size: 14px;
   font-weight: 750;
-  color: #8c93a3;
+  color: #5f6b7a;
 }
 .site-footer small {
   font-size: 11px;
   font-weight: 400;
   margin-left: 11px;
-  color: #a5acb8;
+  color: #5f6b7a;
 }
 .site-footer button {
   font-size: 11px;
@@ -428,7 +428,7 @@ nav > button.active:after {
 .mission-brief > p {
   font-size: 14px;
   line-height: 1.9;
-  color: #6e7c90;
+  color: #5f6b7a;
   margin-top: 13px;
 }
 .mission-brief h2 {
@@ -455,7 +455,7 @@ nav > button.active:after {
   background: #f0f1f8;
   border-radius: 50%;
   font-size: 11px;
-  color: #7a7c98;
+  color: #676985;
   margin-top: 2px;
 }
 .checklist p {
@@ -467,7 +467,7 @@ nav > button.active:after {
   border-block: 1px solid #edf0f5;
   padding: 15px 0;
   font-size: 13px;
-  color: #7d75b3;
+  color: #746bae;
 }
 .primer summary {
   font-weight: 600;
@@ -521,7 +521,7 @@ nav > button.active:after {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #7d759c;
+  color: #766e97;
 }
 .ai-details > p {
   margin: 10px 0;
@@ -537,7 +537,7 @@ nav > button.active:after {
 .solution-link {
   display: block;
   font-size: 12px;
-  color: #9098a6;
+  color: #5f6b7a;
   text-decoration: underline;
   text-underline-offset: 4px;
   margin: 20px auto 0;
@@ -557,7 +557,7 @@ nav > button.active:after {
   background: #e9edf7;
   padding: 0 17px;
   border-bottom: 1px solid #dde3f0;
-  color: #65738b;
+  color: #5c697f;
   font-size: 12px;
 }
 .editor-head > span {
@@ -625,7 +625,7 @@ nav > button.active:after {
 }
 .editor-bottom > span {
   font-size: 11px;
-  color: #929cb0;
+  color: #5f6b7a;
 }
 .editor-bottom kbd {
   font-size: 10px;
@@ -633,7 +633,7 @@ nav > button.active:after {
   border-radius: 4px;
   padding: 3px 5px;
   margin-left: 6px;
-  color: #a2aabb;
+  color: #5f6b7a;
 }
 .output-head {
   border-top: 1px solid var(--line);
@@ -645,7 +645,7 @@ nav > button.active:after {
 }
 .output-head > button {
   font-size: 13px;
-  color: #8b94a6;
+  color: #5f6b7a;
   position: relative;
 }
 .output-head > button.active {
@@ -696,7 +696,7 @@ nav > button.active:after {
 }
 .preview-filters > label:first-child {
   font-size: 12px;
-  color: #7a879b;
+  color: #5f6b7a;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -713,7 +713,7 @@ nav > button.active:after {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #7a879b;
+  color: #5f6b7a;
 }
 .check-label input {
   width: 14px;
@@ -738,7 +738,7 @@ nav > button.active:after {
 }
 .preview-event small {
   font-size: 11px;
-  color: #929caf;
+  color: #5f6b7a;
   display: block;
   margin-top: 3px;
 }
@@ -747,7 +747,7 @@ nav > button.active:after {
   font-size: 10px;
   border-radius: 4px;
   background: #eef4ed;
-  color: #7d9a77;
+  color: #5a7255;
   padding: 3px 7px;
   white-space: nowrap;
 }
@@ -755,7 +755,7 @@ nav > button.active:after {
   padding: 12px 18px;
   border-top: 1px solid #edf0f5;
   font-size: 11px;
-  color: #9ba5b7;
+  color: #5f6b7a;
   display: flex;
   gap: 5px;
   align-items: center;
@@ -788,11 +788,11 @@ nav > button.active:after {
 }
 .tests-list .pass summary > svg:first-child,
 .tests-list .pass summary > small {
-  color: #3e9c7e;
+  color: #327f66;
 }
 .tests-list .fail summary > svg:first-child,
 .tests-list .fail summary > small {
-  color: #bf8c54;
+  color: #966938;
 }
 .tests-list details > p {
   font-size: 12px;
@@ -809,14 +809,14 @@ nav > button.active:after {
 }
 .test-caption {
   font-size: 11px;
-  color: #8a95a7;
+  color: #5f6b7a;
   padding: 0 12px;
   display: block;
   margin-bottom: 5px;
 }
 .json-preview > span {
   font-size: 12px;
-  color: #8c98ac;
+  color: #5f6b7a;
 }
 .json-preview pre {
   font-size: 12px;
@@ -830,7 +830,7 @@ nav > button.active:after {
 .json-preview > small {
   display: block;
   font-size: 12px;
-  color: #8391a6;
+  color: #5f6b7a;
   margin-top: 16px;
 }
 .data-result h3 {
@@ -883,7 +883,7 @@ nav > button.active:after {
   font-weight: 750;
 }
 .page-intro > p {
-  color: #8b94a4;
+  color: #5f6b7a;
   font-size: 15px;
 }
 .records-page,
@@ -912,7 +912,7 @@ nav > button.active:after {
 }
 .empty-state p {
   font-size: 14px;
-  color: #909aaa;
+  color: #5f6b7a;
   margin-bottom: 8px;
   line-height: 1.9;
 }
@@ -1168,7 +1168,7 @@ nav > button.active:after {
 }
 .guide-grid p {
   font-size: 15px;
-  color: #7d889c;
+  color: #5f6b7a;
   line-height: 1.95;
 }
 .guide-grid .btn {
@@ -1178,7 +1178,7 @@ nav > button.active:after {
   display: flex;
   gap: 9px;
   font-size: 12px;
-  color: #8a839b;
+  color: #766f89;
   line-height: 1.9;
   align-items: start;
   margin-top: 13px;
@@ -1215,7 +1215,7 @@ nav > button.active:after {
   position: absolute;
   right: 18px;
   top: 18px;
-  color: #939daf;
+  color: #5f6b7a;
   padding: 3px;
   display: flex;
 }
@@ -1228,7 +1228,7 @@ nav > button.active:after {
 .modal > p {
   font-size: 14px;
   line-height: 1.9;
-  color: #8691a4;
+  color: #5f6b7a;
   margin-bottom: 22px;
 }
 .form-label {
@@ -1294,7 +1294,7 @@ nav > button.active:after {
   border: 1px solid #e4e7f0;
   border-radius: 6px;
   font-size: 15px;
-  color: #9aa2b5;
+  color: #5f6b7a;
 }
 .rating-buttons button.selected {
   background: var(--purple);
@@ -1305,7 +1305,7 @@ nav > button.active:after {
   display: flex;
   justify-content: space-between;
   font-size: 10px;
-  color: #a4abba;
+  color: #5f6b7a;
   margin-top: 6px;
 }
 .toast {
@@ -1649,7 +1649,7 @@ nav > button.active:after {
 /* A quiet campus workbench: one clear action, realistic task previews. */
 :root {
   --ink: #191f28;
-  --muted: #6b7684;
+  --muted: #5f6b7a;
   --purple: #2365e8;
   --purple-dark: #1853ca;
   --line: #e5e8eb;
@@ -1742,7 +1742,7 @@ select:focus-visible {
 }
 .featured-label > span {
   margin-left: auto;
-  color: #7e8794;
+  color: #5f6b7a;
 }
 .featured-task .task-art {
   height: 152px;
@@ -1759,7 +1759,7 @@ select:focus-visible {
 }
 .featured-bottom small {
   font-size: 11px;
-  color: #6b7684;
+  color: #5f6b7a;
   display: block;
 }
 .featured-bottom strong {
@@ -1871,7 +1871,7 @@ select:focus-visible {
 }
 .job-role > span {
   margin-left: auto;
-  color: #6b7684;
+  color: #5f6b7a;
   font-size: 12px;
 }
 .job-info h3 {
@@ -1881,7 +1881,7 @@ select:focus-visible {
 }
 .job-info > p {
   font-size: 13px;
-  color: #6b7684;
+  color: #5f6b7a;
   line-height: 1.6;
   min-height: 42px;
 }
@@ -1892,7 +1892,7 @@ select:focus-visible {
   margin-top: 12px;
   padding-top: 13px;
   border-top: 1px solid #f0f2f4;
-  color: #6b7684;
+  color: #5f6b7a;
   font-size: 11px;
 }
 .job-bottom svg {
@@ -1913,7 +1913,7 @@ select:focus-visible {
 .continue-strip strong {
   margin-left: auto;
   font-weight: 600;
-  color: #2365e8;
+  color: #1c60e7;
 }
 .task-art {
   width: 100%;
@@ -1985,7 +1985,7 @@ select:focus-visible {
 }
 .art-event > svg {
   margin-left: auto;
-  color: #2365e8;
+  color: #1c60e7;
 }
 .art-flow {
   display: flex;
@@ -2199,7 +2199,7 @@ select:focus-visible {
   color: #70569c;
 }
 .rose {
-  color: #b2636a;
+  color: #ae5a62;
 }
 .sky {
   color: #397a9c;
@@ -2210,7 +2210,7 @@ select:focus-visible {
   display: flex;
   gap: 28px;
   margin: 22px 0;
-  color: #9aa3af;
+  color: #5f6b7a;
   font-size: 13px;
 }
 .work-journey li {
@@ -2228,14 +2228,14 @@ select:focus-visible {
   font-size: 11px;
 }
 .work-journey .current {
-  color: #2365e8;
+  color: #1c60e7;
   font-weight: 600;
 }
 .work-journey .current > span {
   background: #e8f0ff;
 }
 .work-journey .done {
-  color: #42866d;
+  color: #3b7862;
 }
 .coach-working {
   display: flex;
@@ -2267,7 +2267,7 @@ select:focus-visible {
   gap: 5px;
   font-size: 12px;
   font-weight: 600;
-  color: #2365e8;
+  color: #1c60e7;
   margin-top: 12px;
   padding: 0;
 }
