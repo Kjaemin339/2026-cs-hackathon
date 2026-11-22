@@ -1,0 +1,107 @@
+// Explicit opt-in: at most 36 synthetic cases / 108 provider requests. Uses
+// in-memory evaluation records only, never reads or mutates a learner's DB.
+import { writeFile, mkdir, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { getHint } from "../lib/coach.ts";
+import { coachGuides } from "../lib/coach-guides.ts";
+import { missionById } from "../lib/missions.ts";
+import { qualityCases } from "../tests/fixtures/coach-quality.mjs";
+if (!process.argv.includes("--live"))
+  throw Error("Explicit --live opt-in required");
+if (!process.env.OPENAI_API_KEY)
+  throw Error("OPENAI_API_KEY is not configured");
+const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+const limit = Number(
+  process.argv.find((a) => a.startsWith("--limit="))?.split("=")[1] ?? 36,
+);
+if (!Number.isInteger(limit) || limit < 1 || limit > 36)
+  throw Error("limit must be 1..36");
+const cases = qualityCases.slice(0, limit);
+const rows = [],
+  usage = [],
+  reservations = new Map();
+const storage = {
+  read: async () => ({ state: { profile: { aiConsent: true } } }),
+  reserve: async (owner, track) => {
+    const key = `${owner}:${track}`,
+      count = reservations.get(key) ?? 0;
+    if (count >= 6) return false;
+    reservations.set(key, count + 1);
+    return true;
+  },
+  logUsage: async (u) => usage.push(u),
+};
+for (const c of cases) {
+  const started = Date.now();
+  const result = await getHint(
+    {
+      track: c.track,
+      code: c.code,
+      question: c.question,
+      level: c.level,
+      tests: [],
+    },
+    `evaluation:${c.track}`,
+    storage,
+    {
+      apiKey: process.env.OPENAI_API_KEY,
+      model,
+    },
+  );
+  const m = missionById(c.track);
+  const g = coachGuides(m).find((g) => g.id === result.guideId);
+  const safe =
+    result.source === "guide"
+      ? m.hints.includes(result.message)
+      : !!g && result.message === g.message && result.references?.length > 0;
+  const relevant =
+    result.source === "ai" && c.expectedGuideIds.includes(result.guideId);
+  rows.push({
+    id: c.id,
+    source: result.source,
+    guideId: result.guideId ?? null,
+    expectedGuideIds: c.expectedGuideIds,
+    safe,
+    relevant,
+    latencyMs: Date.now() - started,
+  });
+  console.log(JSON.stringify(rows.at(-1)));
+}
+const digest = async (paths) => {
+  const hash = createHash("sha256");
+  for (const path of paths)
+    hash.update(await readFile(new URL(path, import.meta.url)));
+  return hash.digest("hex");
+};
+const report = {
+  implementationDigest: await digest([
+    "../lib/coach.ts",
+    "../lib/coach-guides.ts",
+  ]),
+  fixtureDigest: await digest(["../tests/fixtures/coach-quality.mjs"]),
+  evaluatedAt: new Date().toISOString(),
+  model,
+  caseCount: rows.length,
+  safeCount: rows.filter((r) => r.safe).length,
+  relevantCount: rows.filter((r) => r.relevant).length,
+  fallbackCount: rows.filter((r) => r.source === "guide").length,
+  inputTokens: usage.reduce((n, u) => n + u.inputTokens, 0),
+  outputTokens: usage.reduce((n, u) => n + u.outputTokens, 0),
+  note: "Synthetic fixtures only. Safe fallback is not counted as successful model selection. No raw provider response, learner data or credential is recorded. This single run does not guarantee future relevance.",
+  cases: rows,
+};
+await mkdir(new URL("../docs/evals/", import.meta.url), { recursive: true });
+await writeFile(
+  new URL("../docs/evals/coach-quality-latest.json", import.meta.url),
+  JSON.stringify(report, null, 2) + "\n",
+);
+console.log(
+  JSON.stringify({
+    caseCount: report.caseCount,
+    safeCount: report.safeCount,
+    relevantCount: report.relevantCount,
+    fallbackCount: report.fallbackCount,
+  }),
+);
+if (report.safeCount !== rows.length || report.relevantCount !== rows.length)
+  process.exitCode = 1;
