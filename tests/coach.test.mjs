@@ -67,8 +67,7 @@ test("coach reads authoritative mission using a real tool loop before suggesting
     );
     return reply({
       content: JSON.stringify({
-        message: "Set으로 중복을 먼저 없애보세요.",
-        nextAction: "edit",
+        guideId: "ai/hint/1",
       }),
     });
   };
@@ -80,8 +79,9 @@ test("coach reads authoritative mission using a real tool loop before suggesting
   assert.equal(result.source, "ai");
   assert.deepEqual(result.trace, [
     "과제 조건 확인",
-    "실행 전 확인 항목 검토",
-    "다음 행동 제안",
+    "공식 확인 항목 검토",
+    "과제 근거 대조",
+    "검수 힌트 선택",
   ]);
   assert.equal(calls.length, 3);
   assert.equal(store.usage[0].inputTokens, 60);

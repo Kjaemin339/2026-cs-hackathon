@@ -1,5 +1,6 @@
 // Explicit opt-in live test. Creates and deletes only its own temporary record.
 import assert from "node:assert/strict";
+import { coachGuides } from "../lib/coach-guides.ts";
 import { missions } from "../lib/missions.ts";
 const base = process.env.LAB_TEST_URL ?? "http://127.0.0.1:3000";
 const availability = await (await fetch(base + "/api/coach")).json();
@@ -55,7 +56,11 @@ try {
     "ai",
     result.notice ?? "Expected a real AI response, got a prepared hint",
   );
-  assert.ok(result.message?.trim());
+  const selected = coachGuides(mission).find((g) => g.id === result.guideId);
+  assert.ok(selected, "Expected a reviewed guide for this mission");
+  assert.equal(result.message, selected.message);
+  assert.ok(result.references?.length > 0);
+  assert.ok(result.trace?.includes("과제 근거 대조"));
   assert.ok(result.trace?.includes("과제 조건 확인"));
   console.log(
     JSON.stringify(
