@@ -51,6 +51,12 @@ async function setup(t) {
       "utf8",
     ),
   );
+  db.exec(
+    readFileSync(
+      new URL("../migrations/002_analytics.sql", import.meta.url),
+      "utf8",
+    ),
+  );
   const store = createStorage(
     async (sql, values) =>
       db.prepare(sql.replace(/\$\d+/g, "?")).all(...values),

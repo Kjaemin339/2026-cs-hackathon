@@ -1,9 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useStoredLab } from "../use-stored-lab";
-import type { TrackId } from "../../lib/missions";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   LayoutTemplate,
   Ticket,
@@ -36,6 +42,10 @@ import {
   frontendFeedback,
 } from "../../lib/game-rules";
 import s from "./games.module.css";
+import { AnalyticsSettings, useAnalytics } from "../analytics-settings";
+import { GAME_ANALYTICS_VERSION } from "../../lib/analytics-schema";
+import type { TrackId } from "../../lib/missions";
+const GameCheckContext = createContext<(passed: boolean) => void>(() => {});
 
 type PlayProps = { finish: () => void };
 type Step = { label: string; done: boolean };
@@ -54,6 +64,7 @@ function Steps({ items }: { items: Step[] }) {
   );
 }
 function Checkpoint({ error, finish }: PlayProps & { error: string }) {
+  const record = useContext(GameCheckContext);
   const [checked, setChecked] = useState(false);
   return (
     <div className={s.check}>
@@ -61,6 +72,7 @@ function Checkpoint({ error, finish }: PlayProps & { error: string }) {
         className="btn primary"
         onClick={() => {
           setChecked(true);
+          record(!error);
           if (!error) finish();
         }}
       >
@@ -571,6 +583,12 @@ const games = [
 export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
   const { state, setState, status, controller } = useStoredLab();
   const entryHandled = useRef("");
+  // State loading establishes the guest cookie before analytics reads it.
+  const analytics = useAnalytics(status.phase !== "loading");
+  useEffect(() => {
+    if (analytics.status.enabled)
+      analytics.client.current?.track("page_view", { page: "games" });
+  }, [analytics.status.token]);
   const [game, setGame] = useState<number | null>(null),
     [won, setWon] = useState(false),
     [attempt, setAttempt] = useState(0);
@@ -578,6 +596,15 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
   const current = game === null ? null : games[game],
     Play = current?.play;
   const choose = (i: number | null, replay = false) => {
+    const reviewing = i !== null && !replay && !!state.games?.[games[i].id];
+    if (i === null || reviewing) analytics.client.current?.end("left");
+    else
+      analytics.client.current?.begin(
+        games[i].id,
+        "game",
+        GAME_ANALYTICS_VERSION,
+        "new",
+      );
     setGame(i);
     setWon(i !== null && !replay && !!state.games?.[games[i].id]);
     setAttempt((v) => v + 1);
@@ -711,6 +738,7 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
           {current?.intro ??
             "코드 없이 눌러보고 바꿔보며, 직무마다 하는 일을 하나씩 경험해요."}
         </p>
+        <AnalyticsSettings analytics={analytics} />
         {!current && (
           <>
             <div className={s.catalog}>
@@ -741,30 +769,37 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
         )}
         {Play && !won && (
           <div className={s.layout}>
-            <Play
-              key={attempt}
-              finish={() => {
-                if (current)
-                  setState((previous) => {
-                    const now = new Date().toISOString();
-                    return {
-                      ...previous,
-                      games: {
-                        ...previous.games,
-                        [current.id]: {
-                          ...previous.games?.[current.id],
-                          version: 1,
-                          completedAt:
-                            previous.games?.[current.id]?.completedAt ?? now,
-                          updatedAt: now,
+            <GameCheckContext.Provider
+              value={(passed) =>
+                analytics.client.current?.track("game_check", { passed })
+              }
+            >
+              <Play
+                key={attempt}
+                finish={() => {
+                  if (current)
+                    setState((previous) => {
+                      const now = new Date().toISOString();
+                      return {
+                        ...previous,
+                        games: {
+                          ...previous.games,
+                          [current.id]: {
+                            ...previous.games?.[current.id],
+                            version: 1,
+                            completedAt:
+                              previous.games?.[current.id]?.completedAt ?? now,
+                            updatedAt: now,
+                          },
                         },
-                      },
-                    };
-                  });
-                setWon(true);
-                window.scrollTo({ top: 0, behavior: "instant" });
-              }}
-            />
+                      };
+                    });
+                  analytics.client.current?.end("completed");
+                  setWon(true);
+                  window.scrollTo({ top: 0, behavior: "instant" });
+                }}
+              />
+            </GameCheckContext.Provider>
           </div>
         )}
         {won && current && (
