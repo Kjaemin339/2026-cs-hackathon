@@ -1,5 +1,9 @@
 import type { Mission, Progress } from "./missions.ts";
 import { CONTENT_VERSION, releaseMissions } from "./content/2026-11-23.1.ts";
+import {
+  CONTENT_VERSION as STARTER_VERSION,
+  releaseMissions as starterMissions,
+} from "./content/2026-11-23.2.ts";
 export type MissionRelease = {
   version: string;
   reviewStatus: "draft" | "reviewed";
@@ -61,6 +65,13 @@ export const LEGACY_CONTENT_VERSION = CONTENT_VERSION;
 export const missionCatalog = createMissionCatalog(
   [
     {
+      version: STARTER_VERSION,
+      reviewStatus: "reviewed",
+      reviewedAt: "2026-11-23",
+      acceptingNewStarts: true,
+      missions: starterMissions,
+    },
+    {
       version: CONTENT_VERSION,
       reviewStatus: "reviewed",
       reviewedAt: "2026-11-23",
@@ -68,7 +79,7 @@ export const missionCatalog = createMissionCatalog(
       missions: releaseMissions,
     },
   ],
-  CONTENT_VERSION,
+  STARTER_VERSION,
 );
 export const missions = missionCatalog.list();
 export const missionById = missionCatalog.resolve;

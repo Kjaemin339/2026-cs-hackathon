@@ -106,7 +106,10 @@ assert.equal((await coach.json()).source, "guide");
 // preserved for download and never substituted by the coach.
 const versioned = {
   ...answered,
-  progress: { frontend: initialProgress(missionById("frontend")) },
+  progress: {
+    frontend: initialProgress(missionById("frontend")),
+    backend: initialProgress(missionById("backend", LEGACY_CONTENT_VERSION)),
+  },
 };
 assert.equal(
   (
@@ -125,12 +128,21 @@ const versionedRead = (
 ).state;
 assert.equal(
   versionedRead.progress.frontend.contentVersion,
-  LEGACY_CONTENT_VERSION,
+  versioned.progress.frontend.contentVersion,
 );
 assert.equal(versionedRead.progress.frontend.contentVersionSource, "started");
+assert.equal(
+  versionedRead.progress.backend.contentVersion,
+  LEGACY_CONTENT_VERSION,
+);
+assert.equal(
+  versionedRead.progress.backend.code,
+  missionById("backend", LEGACY_CONTENT_VERSION).starter,
+);
 const missing = {
   ...versioned,
   progress: {
+    ...versioned.progress,
     frontend: {
       ...versioned.progress.frontend,
       contentVersion: "unknown-release",
@@ -154,7 +166,7 @@ assert.equal(
       await fetch(base + "/api/state", { headers: { Cookie: cookie } })
     ).json()
   ).state.progress.frontend.contentVersion,
-  LEGACY_CONTENT_VERSION,
+  versioned.progress.frontend.contentVersion,
 );
 const unknownGuest = await fetch(base + "/api/state");
 const unknownHeaders = {

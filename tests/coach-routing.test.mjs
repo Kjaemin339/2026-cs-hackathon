@@ -40,7 +40,14 @@ const provider = (choice, inspect = () => {}) => {
 const ask = (track, question, choice, tests = [], inspect) => {
   const m = missionById(track);
   return getHint(
-    { track, question, code: m.starter, level: 0, tests },
+    {
+      track,
+      contentVersion: m.contentVersion,
+      question,
+      code: m.starter,
+      level: 0,
+      tests,
+    },
     "routing-fixture",
     storage(),
     { apiKey: "fixture", model: "fixture", fetcher: provider(choice, inspect) },

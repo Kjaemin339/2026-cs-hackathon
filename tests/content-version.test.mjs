@@ -9,9 +9,11 @@ import {
 } from "../lib/mission-catalog.ts";
 import {
   missions,
+  missionById,
   initialProgress,
   LEGACY_CONTENT_VERSION,
 } from "../lib/missions.ts";
+import { releaseMissions as archived } from "../lib/content/2026-11-23.1.ts";
 import { coachGuides } from "../lib/coach-guides.ts";
 import {
   normalizeLabState,
@@ -25,7 +27,7 @@ import {
 } from "../lib/lab-state.ts";
 import { stateSchema } from "../lib/server.ts";
 import { getHint, MissionContentError } from "../lib/coach.ts";
-const original = missions.find((m) => m.id === "cloud");
+const original = missionById("cloud", LEGACY_CONTENT_VERSION);
 const release = (m, extra = {}) => ({
   version: m.contentVersion,
   reviewStatus: "reviewed",
@@ -104,7 +106,7 @@ test("pausing one mission does not stop other reviewed missions or resuming exis
   const catalog = createMissionCatalog(
     [
       release(original, {
-        missions: [...missions],
+        missions: [...archived],
         pausedMissionIds: ["cloud"],
       }),
     ],
@@ -362,21 +364,22 @@ test("the archived release file and its complete semantic bundle match the revie
       "utf8",
     ),
   );
-  const file = await readFile(
-    new URL(`../lib/content/${LEGACY_CONTENT_VERSION}.ts`, import.meta.url),
-  );
-  assert.equal(
-    createHash("sha256").update(file).digest("hex"),
-    manifest[LEGACY_CONTENT_VERSION].sha256,
-  );
-  const canonical = missions.map(({ contentVersion, guides, ...m }) => ({
-    ...m,
-    guides,
-  }));
-  assert.equal(
-    createHash("sha256").update(JSON.stringify(canonical)).digest("hex"),
-    manifest[LEGACY_CONTENT_VERSION].semanticSha256,
-  );
+  for (const [version, expected] of Object.entries(manifest)) {
+    const url = new URL(`../lib/content/${version}.ts`, import.meta.url);
+    const file = await readFile(url);
+    const { releaseMissions } = await import(url.href);
+    assert.equal(
+      createHash("sha256").update(file).digest("hex"),
+      expected.sha256,
+    );
+    const canonical = releaseMissions.map(
+      ({ contentVersion, guides, ...m }) => ({ ...m, guides }),
+    );
+    assert.equal(
+      createHash("sha256").update(JSON.stringify(canonical)).digest("hex"),
+      expected.semanticSha256,
+    );
+  }
 });
 
 test("autosave edits stay on the started version; rebinding or removing sessions requires explicit reset", () => {

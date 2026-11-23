@@ -2818,3 +2818,47 @@ select:focus-visible {
 .representative-actions span {
   font-size: 14px;
 }
+
+.practice-start {
+  border-left: 3px solid var(--blue);
+  background: var(--soft-blue);
+  padding: 14px;
+  margin: 18px 0;
+}
+.practice-start h2 {
+  margin-top: 0;
+}
+.practice-start p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.practice-example {
+  border-top: 1px solid #cbd3ed;
+  margin: 12px 0;
+  padding-top: 10px;
+}
+.practice-example span {
+  font-size: 11px;
+  color: #43547a;
+}
+.practice-example p {
+  margin: 4px 0;
+}
+.practice-example strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.practice-start .solution-link {
+  display: block;
+  margin-top: 10px;
+}
+.check-raw {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.tests-list .check-raw > summary {
+  font-size: 12px;
+  color: #43547a;
+  padding: 6px 0;
+}

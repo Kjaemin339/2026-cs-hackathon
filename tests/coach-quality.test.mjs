@@ -55,6 +55,7 @@ const config = (fetcher) => ({
 });
 const input = (m) => ({
   track: m.id,
+  contentVersion: m.contentVersion,
   code: m.starter,
   question: "조건을 확인하고 싶어요",
   level: 0,
