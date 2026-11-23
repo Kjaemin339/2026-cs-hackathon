@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clientHarness } from "./helpers/client-harness.mjs";
+import { clientHarness, deferred } from "./helpers/client-harness.mjs";
 import { DRAFT_KEY } from "../lib/persistence.ts";
 
 test("deleting records while code runs discards the late result instead of autosaving it", async (t) => {
@@ -58,3 +58,53 @@ test("deletion in another tab also invalidates an in-flight execution", async (t
   );
   assert.equal(localStorage.getItem(DRAFT_KEY), null);
 });
+
+for (const game of [false, true]) {
+  test(`${game ? "game" : "code"} direct links wait for existing consent and record one complete journey`, async (t) => {
+    const consentGate = deferred();
+    const f = await clientHarness(t, { game, analytics: true, consentGate });
+    assert.match(
+      f.dom.window.document.body.textContent,
+      /참여 설정을 확인하고 있어요/,
+    );
+    assert.equal(f.events.length, 0);
+    await f.act(async () => consentGate.resolve());
+    await f.settle();
+    if (game) await f.click("결과 확인");
+    else {
+      await f.click("코드 실행");
+      await f.finishRun({
+        tests: [
+          {
+            label: "fixture",
+            passed: false,
+            why: "fixture",
+            actual: false,
+            expected: true,
+          },
+        ],
+        preview: null,
+      });
+    }
+    await f.settle(700);
+    const starts = f.events.filter((e) => e.name === "mission_start");
+    const results = f.events.filter(
+      (e) => e.name === (game ? "game_check" : "run_result"),
+    );
+    assert.equal(starts.length, 1);
+    assert.equal(results.length, 1);
+    assert.equal(results[0].context.journeyId, starts[0].context.journeyId);
+  });
+  for (const analyticsError of [false, true]) {
+    test(`${game ? "game" : "code"} remains usable without collection when consent is ${analyticsError ? "unavailable" : "off"}`, async (t) => {
+      const f = await clientHarness(t, { game, analyticsError });
+      if (game) await f.click("결과 확인");
+      else {
+        await f.click("코드 실행");
+        await f.finishRun();
+      }
+      await f.settle(700);
+      assert.deepEqual(f.events, []);
+    });
+  }
+}

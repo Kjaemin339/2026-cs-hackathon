@@ -125,6 +125,7 @@ export async function clientHarness(t, options = {}) {
         return Response.json({ accepted: batch.length });
       }
       await options.consentGate?.promise;
+      if (options.analyticsError) return Response.json({}, { status: 503 });
       return Response.json({
         enabled: !!options.analytics,
         token: options.analytics

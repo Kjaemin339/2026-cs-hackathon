@@ -304,7 +304,9 @@ export default function Lab({
   const persistence = useRef<ReturnType<typeof createPersistence> | null>(null);
   const executionEpoch = useRef(0);
   const editor = useRef<HTMLTextAreaElement | null>(null);
-  const ready = saveStatus.ready;
+  // Resolve the existing consent before a direct link starts its journey.
+  // A failed consent lookup still permits play, with collection disabled.
+  const ready = saveStatus.ready && analytics.status.phase !== "loading";
   const deleting = saveStatus.phase === "deleting";
   const saveLabel = {
     loading: "불러오는 중",
@@ -923,6 +925,11 @@ export default function Lab({
       {saveStatus.phase === "loading" && (
         <div className="loading-strip" role="status">
           체험 기록을 불러오고 있어요.
+        </div>
+      )}
+      {saveStatus.ready && analytics.status.phase === "loading" && (
+        <div className="loading-strip" role="status">
+          참여 설정을 확인하고 있어요.
         </div>
       )}
       {["error", "recovery", "conflict"].includes(saveStatus.phase) && (

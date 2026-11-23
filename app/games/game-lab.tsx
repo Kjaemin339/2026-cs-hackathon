@@ -585,6 +585,7 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
   const entryHandled = useRef("");
   // State loading establishes the guest cookie before analytics reads it.
   const analytics = useAnalytics(status.phase !== "loading");
+  const ready = status.ready && analytics.status.phase !== "loading";
   useEffect(() => {
     if (analytics.status.enabled)
       analytics.client.current?.track("page_view", { page: "games" });
@@ -596,6 +597,7 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
   const current = game === null ? null : games[game],
     Play = current?.play;
   const choose = (i: number | null, replay = false) => {
+    if (!ready) return;
     const reviewing = i !== null && !replay && !!state.games?.[games[i].id];
     if (i === null || reviewing) analytics.client.current?.end("left");
     else
@@ -611,11 +613,11 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
   useEffect(() => {
-    if (!initialTrack || !status.ready || entryHandled.current === initialTrack)
+    if (!initialTrack || !ready || entryHandled.current === initialTrack)
       return;
     entryHandled.current = initialTrack;
     choose(games.findIndex((g) => g.id === initialTrack));
-  }, [initialTrack, status.ready]);
+  }, [initialTrack, ready]);
   const download = () => {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }),
@@ -734,7 +736,12 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
           )}
         </div>
       </section>
-      <main inert={!status.ready} className={`wrap ${s.main}`}>
+      {status.ready && analytics.status.phase === "loading" && (
+        <div className="loading-strip" role="status">
+          참여 설정을 확인하고 있어요.
+        </div>
+      )}
+      <main inert={!ready} className={`wrap ${s.main}`}>
         {current && (
           <button className={s.back} onClick={() => choose(null)}>
             ← 게임 목록
