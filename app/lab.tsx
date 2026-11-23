@@ -68,6 +68,7 @@ import {
   representativeTracks,
 } from "../lib/next-actions";
 import { requestCoach } from "../lib/coach-request";
+import { activityHref, selectedActivity } from "../lib/activities";
 import { DeadlineExceeded } from "../lib/async-deadline";
 import {
   createPersistence,
@@ -278,7 +279,14 @@ function ProfileQuestions({
     </details>
   );
 }
-export default function Lab() {
+export default function Lab({
+  initialTrack,
+  initialView,
+}: {
+  initialTrack?: TrackId;
+  initialView?: "journal" | "compare";
+}) {
+  const entryHandled = useRef("");
   const [view, setView] = useState<View>("home"),
     [state, setState] = useState<LabState>(emptyState),
     [notice, setNotice] = useState("");
@@ -374,6 +382,10 @@ export default function Lab() {
     .filter((m) => state.progress[m.id]?.reflection)
     .map((m) => missionForProgress(m.id, state.progress[m.id]!) ?? m);
   const completed = recorded.filter((m) => isCompleted(state.progress[m.id]));
+  const inProgress = missions.filter(
+    (m) => state.progress[m.id] && !state.progress[m.id]?.reflection,
+  );
+  const playedGames = missions.filter((m) => state.games?.[m.id]);
   function answerProfile(field: "experience" | "purpose", value: string) {
     setState((s) => ({
       ...s,
@@ -403,6 +415,11 @@ export default function Lab() {
         getItem: (key) => localStorage.getItem(key),
         setItem: (key, value) => localStorage.setItem(key, value),
         removeItem: (key) => localStorage.removeItem(key),
+      },
+      tabStorage: {
+        getItem: (key) => sessionStorage.getItem(key),
+        setItem: (key, value) => sessionStorage.setItem(key, value),
+        removeItem: (key) => sessionStorage.removeItem(key),
       },
       onState: (next) => {
         if (alive) setState(next);
@@ -438,6 +455,13 @@ export default function Lab() {
   useEffect(() => {
     persistence.current?.stage(state);
   }, [state]);
+  useEffect(() => {
+    const entry = initialTrack ?? initialView ?? "";
+    if (!ready || !entry || entryHandled.current === entry) return;
+    entryHandled.current = entry;
+    if (initialTrack) start(initialTrack);
+    else if (initialView) navigate(initialView);
+  }, [ready, initialTrack, initialView]);
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !asking && !deleting) setModal(null);
@@ -847,12 +871,33 @@ export default function Lab() {
                 초안 복구해 저장
               </button>
             ) : saveStatus.phase === "conflict" ? (
-              <button
-                className="btn secondary compact"
-                onClick={() => location.reload()}
-              >
-                새로고침
-              </button>
+              saveStatus.canResolve ? (
+                <>
+                  <button
+                    className="btn primary compact"
+                    onClick={() =>
+                      void persistence.current?.resolveConflict("local")
+                    }
+                  >
+                    겹친 부분은 이 탭 내용 유지
+                  </button>
+                  <button
+                    className="btn secondary compact"
+                    onClick={() =>
+                      void persistence.current?.resolveConflict("remote")
+                    }
+                  >
+                    겹친 부분은 서버 내용 사용
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="btn secondary compact"
+                  onClick={() => location.reload()}
+                >
+                  새로고침
+                </button>
+              )
             ) : (
               <button
                 className="btn primary compact"
@@ -1664,7 +1709,96 @@ export default function Lab() {
             <h1>나의 체험 기록</h1>
             <p>재미있었던 일과 다음에 해볼 일.</p>
           </div>
-          {!recorded.length ? (
+          {!!inProgress.length && (
+            <section
+              className="experience-section"
+              aria-labelledby="in-progress-heading"
+            >
+              <h2 id="in-progress-heading">이어서 해볼 코드 체험</h2>
+              <div className="record-grid">
+                {inProgress.map((m) => {
+                  const p = state.progress[m.id]!;
+                  return (
+                    <article className="record-card" key={m.id}>
+                      <div className="record-top">
+                        <span>{m.title} · 진행 중</span>
+                      </div>
+                      <h3>{m.action}</h3>
+                      <p>
+                        실행 {p.runs}회 ·{" "}
+                        {p.runs
+                          ? "회고를 남기면 완료 기록이 돼요."
+                          : "코드를 수정하고 실행해보세요."}
+                      </p>
+                      <p className="record-execution">
+                        마지막 수정 {formatTime(p.updatedAt)}
+                      </p>
+                      <button
+                        className="btn primary compact"
+                        onClick={() => openWork(m.id)}
+                      >
+                        이어서 하기 <ChevronRight size={16} />
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+          {!!playedGames.length && (
+            <section
+              className="experience-section"
+              aria-labelledby="game-records-heading"
+            >
+              <h2 id="game-records-heading">코드 없이 해본 게임</h2>
+              <p>
+                게임에서 느낀 흥미예요. 코드 체험의 완료·회고와 따로 기록해요.
+              </p>
+              <div className="record-grid">
+                {playedGames.map((m) => {
+                  const g = state.games![m.id]!;
+                  return (
+                    <article className="record-card" key={m.id}>
+                      <div className="record-top">
+                        <span>{m.title} · 게임 완료</span>
+                        <small>
+                          {new Date(g.completedAt).toLocaleDateString("ko-KR")}
+                        </small>
+                      </div>
+                      <h3>{m.title} 업무 맛보기</h3>
+                      <p>
+                        흥미{" "}
+                        {g.interest
+                          ? `${g.interest}/5`
+                          : "아직 평가하지 않았어요"}
+                      </p>
+                      <div className="experience-actions">
+                        <button
+                          className="btn primary compact"
+                          onClick={() => start(m.id)}
+                        >
+                          같은 직무 코드 체험
+                        </button>
+                        <Link
+                          className="btn secondary compact"
+                          href={`/games?track=${m.id}`}
+                        >
+                          게임·흥미 평가 열기
+                        </Link>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <button
+                className="btn secondary"
+                onClick={() => navigate("compare")}
+              >
+                게임 흥미 비교하기
+              </button>
+            </section>
+          )}
+          {!recorded.length && !inProgress.length && !playedGames.length ? (
             <div className="empty-state">
               <FolderOpen size={42} />
               <h2>첫 경험을 기다리고 있어요.</h2>
@@ -1678,91 +1812,104 @@ export default function Lab() {
               </button>
             </div>
           ) : (
-            <>
-              <div className="record-grid">
-                {recorded.map((m) => {
-                  const p = state.progress[m.id]!,
-                    r = p.reflection!;
-                  return (
-                    <article className="record-card" key={m.id}>
-                      <div className={`record-icon ${m.color}`}>
-                        <TrackIcon id={m.id} />
-                      </div>
-                      <div className="record-top">
-                        <span>
-                          {m.title} · {recordStatus(p)}
-                        </span>
-                        <small>
-                          {new Date(r.endedAt).toLocaleDateString("ko-KR")}
-                        </small>
-                      </div>
-                      <h2>{m.action}</h2>
-                      <div className="score-summary">
-                        <span>
-                          흥미 <b>{r.interest}/5</b>
-                        </span>
-                        <span>
-                          체감 난이도 <b>{r.difficulty}/5</b>
-                        </span>
-                        <span>
-                          다시 해보고 싶음 <b>{r.again}/5</b>
-                        </span>
-                      </div>
-                      {r.execution && (
-                        <p className="record-execution">
-                          {r.execution.contentVersion
-                            ? `과제 ${r.execution.contentVersion} · `
-                            : "과제 기준 미확인 · "}
-                          기록한 실행:{" "}
-                          {
-                            r.execution.result.tests.filter((t) => t.passed)
-                              .length
-                          }
-                          /{r.execution.result.tests.length} 통과 ·{" "}
-                          {new Date(r.execution.executedAt).toLocaleString(
-                            "ko-KR",
-                          )}
-                        </p>
-                      )}
-                      <p className="record-note">{r.note}</p>
-                      <div className="next-action">
-                        <span>다음에 해볼 일</span>
-                        <b>{r.next}</b>
-                        {r.nextPlan && (
-                          <>
-                            <p className="next-plan-reason">
-                              선택 당시 제안: {r.nextPlan.reason}
-                            </p>
-                            <p className="next-plan-choice">
-                              내 선택 이유: {r.nextPlan.selectionReason}
-                            </p>
-                          </>
+            !!recorded.length && (
+              <>
+                <div className="record-grid">
+                  {recorded.map((m) => {
+                    const p = state.progress[m.id]!,
+                      r = p.reflection!;
+                    return (
+                      <article className="record-card" key={m.id}>
+                        <div className={`record-icon ${m.color}`}>
+                          <TrackIcon id={m.id} />
+                        </div>
+                        <div className="record-top">
+                          <span>
+                            {m.title} · {recordStatus(p)}
+                          </span>
+                          <small>
+                            {new Date(r.endedAt).toLocaleDateString("ko-KR")}
+                          </small>
+                        </div>
+                        <h2>{m.action}</h2>
+                        <div className="score-summary">
+                          <span>
+                            흥미 <b>{r.interest}/5</b>
+                          </span>
+                          <span>
+                            체감 난이도 <b>{r.difficulty}/5</b>
+                          </span>
+                          <span>
+                            다시 해보고 싶음 <b>{r.again}/5</b>
+                          </span>
+                        </div>
+                        {r.execution && (
+                          <p className="record-execution">
+                            {r.execution.contentVersion
+                              ? `과제 ${r.execution.contentVersion} · `
+                              : "과제 기준 미확인 · "}
+                            기록한 실행:{" "}
+                            {
+                              r.execution.result.tests.filter((t) => t.passed)
+                                .length
+                            }
+                            /{r.execution.result.tests.length} 통과 ·{" "}
+                            {new Date(r.execution.executedAt).toLocaleString(
+                              "ko-KR",
+                            )}
+                          </p>
                         )}
-                      </div>
-                      <div className="record-foot">
-                        <small>
-                          실행 {p.runs}회 · 힌트 {p.hintLevel}단계
-                          {p.usedSolution ? " · 참고 풀이 열람" : ""}
-                        </small>
-                        <button
-                          className="text-button"
-                          onClick={() => openWork(m.id)}
-                        >
-                          다시 열기
-                          <ChevronRight size={16} />
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-              <button
-                className="btn primary"
-                onClick={() => navigate("compare")}
-              >
-                체험 비교하기
-              </button>
-            </>
+                        <p className="record-note">{r.note}</p>
+                        <div className="next-action">
+                          <span>다음에 해볼 일</span>
+                          <b>{r.next}</b>
+                          {r.nextPlan && (
+                            <>
+                              <p className="next-plan-reason">
+                                선택 당시 제안: {r.nextPlan.reason}
+                              </p>
+                              <p className="next-plan-choice">
+                                내 선택 이유: {r.nextPlan.selectionReason}
+                              </p>
+                            </>
+                          )}
+                          {selectedActivity(r) && (
+                            <Link
+                              className="btn primary compact"
+                              href={activityHref(selectedActivity(r)!)}
+                            >
+                              {selectedActivity(r)!.kind === "explore"
+                                ? "추천 직무 체험 시작"
+                                : "다음 활동 안내 열기"}{" "}
+                              <ArrowUpRight size={16} />
+                            </Link>
+                          )}
+                        </div>
+                        <div className="record-foot">
+                          <small>
+                            실행 {p.runs}회 · 힌트 {p.hintLevel}단계
+                            {p.usedSolution ? " · 참고 풀이 열람" : ""}
+                          </small>
+                          <button
+                            className="text-button"
+                            onClick={() => openWork(m.id)}
+                          >
+                            다시 열기
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+                <button
+                  className="btn primary"
+                  onClick={() => navigate("compare")}
+                >
+                  체험 비교하기
+                </button>
+              </>
+            )
           )}
           <section className="record-settings">
             <div>
@@ -1791,9 +1938,9 @@ export default function Lab() {
                   초안과 이어하기 정보도 사라져요.
                 </p>
                 <p>
-                  전체 삭제는 코드·회고·사전 응답·AI 호출 정보를 지워요. 재저장
-                  방지용 익명 표시만 30일, 오늘의 AI 사용 횟수는 하루 동안
-                  유지해요.
+                  전체 삭제는 코드·회고·게임 완료·흥미 평가·사전 응답·AI 호출
+                  정보를 지워요. 재저장 방지용 익명 표시만 30일, 오늘의 AI 사용
+                  횟수는 하루 동안 유지해요.
                 </p>
               </details>
             </div>
@@ -1820,6 +1967,50 @@ export default function Lab() {
             <h1>나에게 남은 경험을 나란히.</h1>
             <p>성적보다 과정에서 느낀 흥미를 살펴보세요.</p>
           </div>
+          {!!playedGames.length && (
+            <section
+              className="experience-section"
+              aria-labelledby="game-comparison-heading"
+            >
+              <h2 id="game-comparison-heading">게임에서 느낀 흥미</h2>
+              <p>
+                코드 없이 해본 경험끼리 비교해요. 미평가는 점수에 포함하지
+                않아요.
+              </p>
+              <div className="compare-table-wrap">
+                <table className="compare-table">
+                  <thead>
+                    <tr>
+                      <th>직무 게임</th>
+                      <th>흥미</th>
+                      <th>다음 경험</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {playedGames.map((m) => (
+                      <tr key={m.id}>
+                        <th>{m.title}</th>
+                        <td>
+                          {state.games![m.id]!.interest
+                            ? `${state.games![m.id]!.interest} / 5`
+                            : "미평가"}
+                        </td>
+                        <td>
+                          <button
+                            className="text-button"
+                            onClick={() => start(m.id)}
+                          >
+                            코드로도 해보기 <ChevronRight size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+          <h2>코드 체험 회고 비교</h2>
           {completed.length < 2 ? (
             <div className="empty-state">
               <ChartNoAxesCombined size={42} />
@@ -1923,6 +2114,14 @@ export default function Lab() {
                             {missions.find((m) => m.id === id)!.title}
                           </strong>
                           <span>{saved.next}</span>
+                          {selectedActivity(saved) && (
+                            <Link
+                              className="text-button"
+                              href={activityHref(selectedActivity(saved)!)}
+                            >
+                              다음 활동 열기 <ArrowUpRight size={16} />
+                            </Link>
+                          )}
                           {saved.nextPlan && (
                             <small>
                               내 선택 이유: {saved.nextPlan.selectionReason}

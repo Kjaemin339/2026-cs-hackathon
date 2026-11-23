@@ -3,11 +3,16 @@ import type { LabState } from "./missions";
 import { RETENTION_MS } from "./retention.ts";
 
 export class RecordDeleted extends Error {}
+export class RecordConflict extends Error {}
 
 type SavedState = { state: LabState; updatedAt: number };
 export interface LabStorage {
   read(owner: string): Promise<SavedState | null>;
-  save(owner: string, state: LabState): Promise<number>;
+  save(
+    owner: string,
+    state: LabState,
+    expected?: number | null,
+  ): Promise<number>;
   remove(owner: string): Promise<void>;
   cleanup(): Promise<{ states: number; calls: number; usage: number }>;
   reserve(owner: string, track: string): Promise<boolean>;
@@ -49,13 +54,29 @@ export function createStorage(query: Query, now = Date.now): LabStorage {
         updatedAt: Number(row.updated_at),
       };
     },
-    async save(owner, state) {
-      const timestamp = now();
-      const rows = await query(
-        "INSERT INTO lab_states(owner_key,state,updated_at) VALUES ($1,$2,$3) ON CONFLICT(owner_key) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at WHERE lab_states.state <> 'null' RETURNING updated_at",
-        [owner, JSON.stringify(state), timestamp],
-      );
-      if (!rows.length) throw new RecordDeleted("RECORD_DELETED");
+    async save(owner, state, expected = null) {
+      // The persisted timestamp is also a revision: even writes within one
+      // millisecond must receive different revisions. Never recreate a tombstone.
+      const timestamp = Math.max(now(), (expected ?? 0) + 1);
+      const rows =
+        expected === null
+          ? await query(
+              "INSERT INTO lab_states(owner_key,state,updated_at) VALUES ($1,$2,$3) ON CONFLICT(owner_key) DO NOTHING RETURNING updated_at",
+              [owner, JSON.stringify(state), timestamp],
+            )
+          : await query(
+              "UPDATE lab_states SET state=$1,updated_at=$2 WHERE owner_key=$3 AND updated_at=$4 AND state <> 'null' RETURNING updated_at",
+              [JSON.stringify(state), timestamp, owner, expected],
+            );
+      if (!rows.length) {
+        const [row] = await query(
+          "SELECT state FROM lab_states WHERE owner_key=$1",
+          [owner],
+        );
+        if (!row || row.state === "null" || row.state === null)
+          throw new RecordDeleted("RECORD_DELETED");
+        throw new RecordConflict("RECORD_CONFLICT");
+      }
       return Number(rows[0].updated_at);
     },
     async remove(owner) {
