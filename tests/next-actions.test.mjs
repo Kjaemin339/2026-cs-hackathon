@@ -1,3 +1,7 @@
+import {
+  releaseMissions as archived,
+  CONTENT_VERSION as archivedVersion,
+} from "../lib/content/2026-11-23.1.ts";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import test from "node:test";
@@ -328,11 +332,11 @@ test("legacy in-progress work resolves its original reviewed version even when t
   const catalog = createMissionCatalog(
     [
       {
-        version: m.contentVersion,
+        version: archivedVersion,
         reviewStatus: "reviewed",
         reviewedAt: "2026-11-23",
         acceptingNewStarts: false,
-        missions: [...missions],
+        missions: [...archived],
       },
       {
         version: "future-draft",
