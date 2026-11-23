@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { emptyState } from "../lib/missions";
 import {
   createPersistence,
-  DRAFT_KEY,
+  isRecordReset,
   type SaveStatus,
 } from "../lib/persistence";
 
@@ -22,6 +22,10 @@ export function useStoredLab() {
   useEffect(() => {
     const persistence = createPersistence({
       storage: {
+        get length() {
+          return localStorage.length;
+        },
+        key: (index) => localStorage.key(index),
         getItem: (key) => localStorage.getItem(key),
         setItem: (key, value) => localStorage.setItem(key, value),
         removeItem: (key) => localStorage.removeItem(key),
@@ -37,11 +41,7 @@ export function useStoredLab() {
     controller.current = persistence;
     void persistence.load();
     const onStorage = (event: StorageEvent) => {
-      if (
-        (event.key === DRAFT_KEY && event.newValue === null) ||
-        event.key === null
-      )
-        persistence.externalReset();
+      if (isRecordReset(event)) persistence.externalReset();
     };
     window.addEventListener("storage", onStorage);
     return () => {

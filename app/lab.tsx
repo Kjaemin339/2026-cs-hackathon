@@ -74,7 +74,7 @@ import { activityHref, selectedActivity } from "../lib/activities";
 import { DeadlineExceeded } from "../lib/async-deadline";
 import {
   createPersistence,
-  DRAFT_KEY,
+  isRecordReset,
   hasWork,
   type SaveStatus,
 } from "../lib/persistence";
@@ -427,6 +427,10 @@ export default function Lab({
     let alive = true;
     const controller = createPersistence({
       storage: {
+        get length() {
+          return localStorage.length;
+        },
+        key: (index) => localStorage.key(index),
         getItem: (key) => localStorage.getItem(key),
         setItem: (key, value) => localStorage.setItem(key, value),
         removeItem: (key) => localStorage.removeItem(key),
@@ -447,7 +451,7 @@ export default function Lab({
     persistence.current = controller;
     void controller.load();
     const onStorage = (e: StorageEvent) => {
-      if ((e.key === DRAFT_KEY && e.newValue === null) || e.key === null) {
+      if (isRecordReset(e)) {
         cancelCoach();
         cancelExecution();
         controller.externalReset();
@@ -990,6 +994,18 @@ export default function Lab({
             )}
           </div>
         </section>
+      )}
+      {!!saveStatus.pendingDrafts && saveStatus.ready && (
+        <div className="storage-banner" role="status">
+          다른 창에서 저장하지 못한 초안이 {saveStatus.pendingDrafts}개 남아
+          있어요.
+          <button
+            className="btn secondary compact"
+            onClick={() => void persistence.current?.recoverNextDraft()}
+          >
+            남은 초안 확인
+          </button>
+        </div>
       )}
       {!saveStatus.localSaved &&
         ["saving", "saved"].includes(saveStatus.phase) && (

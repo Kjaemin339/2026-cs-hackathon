@@ -4,6 +4,12 @@ import { mergeStates, sameValue } from "./state-merge.ts";
 import { abortable } from "./async-deadline.ts";
 
 export const DRAFT_KEY = "haebogi-lab-v1";
+export const PENDING_PREFIX = `${DRAFT_KEY}:pending:`;
+const RESET_KEY = `${DRAFT_KEY}:reset`;
+export const isRecordReset = (event: Pick<StorageEvent, "key" | "newValue">) =>
+  event.key === null ||
+  (event.key === DRAFT_KEY && event.newValue === null) ||
+  (event.key === RESET_KEY && event.newValue !== null);
 export type SaveStatus = {
   phase:
     | "loading"
@@ -20,6 +26,7 @@ export type SaveStatus = {
   expiresAt: string | null;
   message: string;
   canResolve?: boolean;
+  pendingDrafts?: number;
 };
 type Draft = {
   format: 2;
@@ -28,6 +35,7 @@ type Draft = {
   savedAt: string | null;
   expiresAt: string | null;
   base?: LabState;
+  id?: string;
 };
 type ServerRecord = {
   state: LabState | null;
@@ -56,6 +64,7 @@ export function readDraft(raw: string | null): Draft | null {
       dirty: x.format !== 2 || x.dirty !== false,
       savedAt: typeof x.savedAt === "string" ? x.savedAt : null,
       expiresAt: typeof x.expiresAt === "string" ? x.expiresAt : null,
+      ...(typeof x.id === "string" ? { id: x.id } : {}),
       ...(x.base?.version === 1 && x.base?.progress
         ? { base: normalizeLabState(x.base) }
         : {}),
@@ -67,7 +76,10 @@ export function readDraft(raw: string | null): Draft | null {
 // One queue owns autosave, coach pre-save and deletion. All status updates are
 // tied to an epoch so late responses cannot revive a deleted or replaced draft.
 export function createPersistence(options: {
-  storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  storage: Pick<
+    Storage,
+    "getItem" | "setItem" | "removeItem" | "key" | "length"
+  >;
   tabStorage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   onState: (state: LabState) => void;
   onStatus: (status: SaveStatus) => void;
@@ -84,6 +96,9 @@ export function createPersistence(options: {
     epoch = 0,
     disposed = false;
   let conflictRemote: ServerRecord | null = null;
+  let ownKey: string | null = null;
+  let selectedKey: string | null = null;
+  const resolvedKeys = new Set<string>();
   let tail: Promise<unknown> = Promise.resolve();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let status: SaveStatus = {
@@ -127,28 +142,89 @@ export function createPersistence(options: {
       combined,
     );
   };
+  const pending = () => {
+    const entries: { key: string; draft: Draft }[] = [];
+    try {
+      for (let i = 0; i < options.storage.length; i++) {
+        const key = options.storage.key(i);
+        if (!key?.startsWith(PENDING_PREFIX)) continue;
+        const draft = readDraft(options.storage.getItem(key));
+        if (draft?.dirty) entries.push({ key, draft });
+      }
+    } catch {
+      /* Storage may be unavailable. */
+    }
+    return entries;
+  };
+  const reportPending = () =>
+    emit({
+      pendingDrafts: pending().filter(
+        ({ key }) => key !== ownKey && key !== selectedKey,
+      ).length,
+    });
+  const acknowledge = (snapshot: LabState) => {
+    for (const { key, draft } of pending()) {
+      const merged = mergeStates(
+        draft.base ?? emptyState(),
+        draft.state,
+        snapshot,
+      );
+      if (
+        resolvedKeys.has(key) ||
+        (!merged.conflicts.length && sameValue(merged.state, snapshot))
+      ) {
+        try {
+          options.storage.removeItem(key);
+          if (key === selectedKey) selectedKey = null;
+          if (key === ownKey) ownKey = null;
+          resolvedKeys.delete(key);
+        } catch {
+          /* Keep recoverable copies when cleanup is blocked. */
+        }
+      }
+    }
+    reportPending();
+  };
   const writeLocal = () => {
+    const dirty = fingerprint(state) !== synced;
+    const id = crypto.randomUUID();
     const raw = JSON.stringify({
       format: 2,
       state,
-      dirty: fingerprint(state) !== synced,
+      dirty,
+      id,
       savedAt: status.savedAt,
       expiresAt: status.expiresAt,
       base,
     } satisfies Draft);
-    // A tab's unsaved draft must survive another tab writing the shared cache.
-    // Either storage can be unavailable independently (privacy mode or quota).
+    // Immutable, durable entries survive both shared-cache writes and closing
+    // the originating tab. Remove our previous entry only after its replacement
+    // is durable; another tab can safely acknowledge an older immutable entry.
     let saved = false;
-    for (const storage of [options.tabStorage, options.storage]) {
-      if (!storage) continue;
+    if (dirty) {
       try {
-        storage.setItem(DRAFT_KEY, raw);
+        const key = `${PENDING_PREFIX}${id}`;
+        options.storage.setItem(key, raw);
         saved = true;
+        const previous = ownKey;
+        ownKey = key;
+        if (previous && previous !== selectedKey)
+          options.storage.removeItem(previous);
       } catch {
-        /* Try the other backup. */
+        /* Never claim session-only data survives closing the tab. */
       }
     }
+    try {
+      options.storage.setItem(DRAFT_KEY, raw);
+      if (!dirty) saved = true;
+    } catch {
+      /* The independent pending entry may still be durable. */
+    }
+    try {
+      options.tabStorage?.setItem(DRAFT_KEY, raw);
+    } catch {}
     emit({ localSaved: saved });
+    reportPending();
   };
   function enqueue(signal?: AbortSignal): Promise<Response> {
     const token = epoch;
@@ -225,6 +301,7 @@ export function createPersistence(options: {
           } catch {}
           synced = fingerprint(snapshot);
           base = snapshot;
+          acknowledge(snapshot);
           emit({ savedAt: data.savedAt, expiresAt: data.expiresAt });
           writeLocal();
           if (fingerprint(state) === synced)
@@ -254,12 +331,17 @@ export function createPersistence(options: {
         /* Storage may be unavailable. */
       }
       if (!draft?.dirty) {
+        draft = pending()[0]?.draft ?? null;
+      }
+      if (!draft) {
         try {
           draft = readDraft(options.storage.getItem(DRAFT_KEY)) ?? draft;
         } catch {
           /* Retain any tab backup. */
         }
       }
+      selectedKey = draft?.id ? `${PENDING_PREFIX}${draft.id}` : null;
+      reportPending();
       if (draft) {
         state = draft.state;
         base = draft.base ?? emptyState();
@@ -268,7 +350,20 @@ export function createPersistence(options: {
       emit({
         phase: "loading",
         ready: false,
-        localSaved: !!draft,
+        localSaved:
+          !!draft &&
+          (() => {
+            try {
+              const cached = readDraft(
+                options.storage.getItem(
+                  draft.dirty ? (selectedKey ?? DRAFT_KEY) : DRAFT_KEY,
+                ),
+              );
+              return !!cached && sameValue(cached.state, draft.state);
+            } catch {
+              return false;
+            }
+          })(),
         savedAt: draft?.savedAt ?? null,
         expiresAt: draft?.expiresAt ?? null,
         message: "",
@@ -314,6 +409,7 @@ export function createPersistence(options: {
         } else state = remoteState;
         base = remoteState;
         synced = fingerprint(remoteState);
+        acknowledge(remoteState);
         active = true;
         options.onState(state);
         emit({
@@ -360,6 +456,10 @@ export function createPersistence(options: {
     async resolveConflict(preference: "local" | "remote") {
       if (!conflictRemote?.state || status.phase !== "conflict") return;
       const remote = conflictRemote;
+      if (preference === "remote") {
+        if (selectedKey) resolvedKeys.add(selectedKey);
+        if (ownKey) resolvedKeys.add(ownKey);
+      }
       state = mergeStates(base, state, remote.state!, preference).state;
       base = remote.state!;
       synced = fingerprint(base);
@@ -376,6 +476,18 @@ export function createPersistence(options: {
       });
       writeLocal();
       if (!sameValue(state, base)) await api.saveNow().catch(() => {});
+      else acknowledge(base);
+    },
+    async recoverNextDraft() {
+      if (!active || !status.ready) return;
+      if (fingerprint(state) !== synced) {
+        try {
+          await api.saveNow();
+        } catch {
+          return;
+        }
+      }
+      await api.load();
     },
     async retry() {
       if (!active) return api.load();
@@ -403,7 +515,13 @@ export function createPersistence(options: {
         if (token !== epoch || disposed) return false;
         // Keep deletion locked if this browser cannot remove its own draft.
         options.storage.removeItem(DRAFT_KEY);
+        for (const { key } of pending()) options.storage.removeItem(key);
         options.tabStorage?.removeItem(DRAFT_KEY);
+        // Broadcast even when no shared cache existed at deletion time.
+        options.storage.setItem(RESET_KEY, crypto.randomUUID());
+        options.storage.removeItem(RESET_KEY);
+        ownKey = selectedKey = null;
+        resolvedKeys.clear();
         state = emptyState();
         base = state;
         conflictRemote = null;
@@ -415,6 +533,7 @@ export function createPersistence(options: {
           canResolve: false,
           ready: true,
           localSaved: false,
+          pendingDrafts: 0,
           savedAt: null,
           expiresAt: null,
           message: "",
@@ -440,16 +559,20 @@ export function createPersistence(options: {
       conflictRemote = null;
       try {
         options.tabStorage?.removeItem(DRAFT_KEY);
+        if (ownKey) options.storage.removeItem(ownKey);
       } catch {
         /* The server deletion fence still blocks stale writes. */
       }
       synced = fingerprint(state);
+      ownKey = selectedKey = null;
+      resolvedKeys.clear();
       options.onState(state);
       emit({
         phase: "conflict",
         canResolve: false,
         ready: false,
         localSaved: false,
+        pendingDrafts: 0,
         savedAt: null,
         expiresAt: null,
         message:

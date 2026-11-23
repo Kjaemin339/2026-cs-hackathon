@@ -670,6 +670,14 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
           )}
         </div>
         <div className="storage-actions">
+          {!!status.pendingDrafts && status.ready && (
+            <button
+              className="btn secondary compact"
+              onClick={() => void controller.current?.recoverNextDraft()}
+            >
+              남은 초안 {status.pendingDrafts}개 확인
+            </button>
+          )}
           {status.phase === "error" && (
             <button
               className="btn primary compact"
