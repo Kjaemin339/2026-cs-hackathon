@@ -583,6 +583,7 @@ const games = [
 export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
   const { state, setState, status, controller } = useStoredLab();
   const entryHandled = useRef("");
+  const [locationVersion, setLocationVersion] = useState(0);
   // State loading establishes the guest cookie before analytics reads it.
   const analytics = useAnalytics(status.phase !== "loading");
   const ready = status.ready && analytics.status.phase !== "loading";
@@ -596,8 +597,22 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
   const done = games.filter((g) => state.games?.[g.id]);
   const current = game === null ? null : games[game],
     Play = current?.play;
-  const choose = (i: number | null, replay = false) => {
+  const choose = (
+    i: number | null,
+    replay = false,
+    mode: "push" | "replace" = "push",
+  ) => {
     if (!ready) return;
+    const url = new URL(window.location.href);
+    if (i === null) url.searchParams.delete("track");
+    else url.searchParams.set("track", games[i].id);
+    if (url.href !== window.location.href)
+      window.history[mode === "push" ? "pushState" : "replaceState"](
+        null,
+        "",
+        url,
+      );
+    entryHandled.current = url.href;
     const reviewing = i !== null && !replay && !!state.games?.[games[i].id];
     if (i === null || reviewing) analytics.client.current?.end("left");
     else
@@ -613,11 +628,16 @@ export default function GameLab({ initialTrack }: { initialTrack?: TrackId }) {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
   useEffect(() => {
-    if (!initialTrack || !ready || entryHandled.current === initialTrack)
-      return;
-    entryHandled.current = initialTrack;
-    choose(games.findIndex((g) => g.id === initialTrack));
-  }, [initialTrack, ready]);
+    const changed = () => setLocationVersion((value) => value + 1);
+    window.addEventListener("popstate", changed);
+    return () => window.removeEventListener("popstate", changed);
+  }, []);
+  useEffect(() => {
+    if (!ready || entryHandled.current === window.location.href) return;
+    const track = new URL(window.location.href).searchParams.get("track");
+    const index = games.findIndex((g) => g.id === track);
+    choose(index < 0 ? null : index, false, "replace");
+  }, [initialTrack, ready, locationVersion]);
   const download = () => {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }),

@@ -153,7 +153,7 @@ export async function clientHarness(t, options = {}) {
   const Component = load(
     path.join(repo, options.game ? "app/games/game-lab.tsx" : "app/lab.tsx"),
   ).default;
-  const root = createRoot(dom.window.document.getElementById("root"));
+  let root = createRoot(dom.window.document.getElementById("root"));
   const settle = async (ms = 5) =>
     React.act(async () => {
       await new Promise((resolve) => setTimeout(resolve, ms));
@@ -166,15 +166,19 @@ export async function clientHarness(t, options = {}) {
       else delete globalThis[key];
     }
   });
-  const url = new URL(dom.window.location.href);
-  await React.act(async () =>
-    root.render(
-      React.createElement(Component, {
-        initialTrack: url.searchParams.get("track") ?? undefined,
-        initialView: url.searchParams.get("view") ?? undefined,
-      }),
-    ),
-  );
+  const render = async () => {
+    const url = new URL(dom.window.location.href);
+    await React.act(async () =>
+      root.render(
+        React.createElement(Component, {
+          initialTrack: url.searchParams.get("track") ?? undefined,
+          initialView: url.searchParams.get("view") ?? undefined,
+        }),
+      ),
+    );
+    await settle();
+  };
+  await render();
   await settle();
   return {
     dom,
@@ -183,12 +187,26 @@ export async function clientHarness(t, options = {}) {
     runs,
     settle,
     act: React.act,
+    async reload() {
+      await React.act(async () => root.unmount());
+      root = createRoot(dom.window.document.getElementById("root"));
+      await render();
+    },
+    async history(direction) {
+      await React.act(async () => {
+        dom.window.history[direction]();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      await settle();
+    },
     get stored() {
       return stored;
     },
     async click(text, within = dom.window.document) {
       const button = [...within.querySelectorAll("button")].find(
-        (node) => node.textContent.trim() === text,
+        (node) =>
+          node.textContent.trim() === text ||
+          node.getAttribute("aria-label") === text,
       );
       assert.ok(button, `Missing button: ${text}`);
       assert.equal(button.disabled, false, `Disabled button: ${text}`);

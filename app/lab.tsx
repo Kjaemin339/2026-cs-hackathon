@@ -80,6 +80,7 @@ import {
 } from "../lib/persistence";
 
 type View = "home" | "work" | "journal" | "compare" | "guide";
+type HistoryMode = "push" | "replace";
 const icons = {
   frontend: LayoutTemplate,
   backend: Braces,
@@ -286,9 +287,10 @@ export default function Lab({
   initialView,
 }: {
   initialTrack?: TrackId;
-  initialView?: "journal" | "compare";
+  initialView?: "journal" | "compare" | "guide";
 }) {
   const entryHandled = useRef("");
+  const [locationVersion, setLocationVersion] = useState(0);
   const [view, setView] = useState<View>("home"),
     [state, setState] = useState<LabState>(emptyState),
     [notice, setNotice] = useState("");
@@ -418,8 +420,22 @@ export default function Lab({
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setNotice(""), 4500);
   }
-  function navigate(next: View) {
+  function navigate(next: View, mode: HistoryMode = "push", track = active) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("track");
+    url.searchParams.delete("view");
+    if (next === "work") url.searchParams.set("track", track);
+    else if (next !== "home") url.searchParams.set("view", next);
+    url.hash = "";
+    if (url.href !== window.location.href)
+      window.history[mode === "push" ? "pushState" : "replaceState"](
+        null,
+        "",
+        url,
+      );
+    entryHandled.current = url.href;
     cancelCoach();
+    setModal(null);
     if (view === "work" && next !== "work")
       analytics.client.current?.end("left");
     setView(next);
@@ -481,12 +497,27 @@ export default function Lab({
     persistence.current?.stage(state);
   }, [state]);
   useEffect(() => {
-    const entry = initialTrack ?? initialView ?? "";
-    if (!ready || !entry || entryHandled.current === entry) return;
-    entryHandled.current = entry;
-    if (initialTrack) start(initialTrack);
-    else if (initialView) navigate(initialView);
-  }, [ready, initialTrack, initialView]);
+    const changed = () => setLocationVersion((value) => value + 1);
+    window.addEventListener("popstate", changed);
+    return () => window.removeEventListener("popstate", changed);
+  }, []);
+  useEffect(() => {
+    if (!ready || entryHandled.current === window.location.href) return;
+    const url = new URL(window.location.href);
+    const track = missions.find(
+      (m) => m.id === url.searchParams.get("track"),
+    )?.id;
+    const next = url.searchParams.get("view");
+    entryHandled.current = url.href;
+    if (track) start(track, "replace");
+    else
+      navigate(
+        next === "journal" || next === "compare" || next === "guide"
+          ? next
+          : "home",
+        "replace",
+      );
+  }, [ready, initialTrack, initialView, locationVersion]);
   useEffect(() => {
     if (!analytics.status.enabled) return;
     analytics.client.current?.track("page_view", { page: view });
@@ -559,16 +590,16 @@ export default function Lab({
       },
     }));
   }
-  function start(id: TrackId) {
+  function start(id: TrackId, mode: HistoryMode = "push") {
     if (!ready) return;
     if (!state.profile)
       setState((s) => ({
         ...s,
         profile: normalizeProfile(null),
       }));
-    openWork(id);
+    openWork(id, mode);
   }
-  function openWork(id: TrackId) {
+  function openWork(id: TrackId, mode: HistoryMode = "push") {
     if (!state.progress[id] && !canStartMission(id)) {
       toast("지금은 새 체험을 준비 중이에요.");
       return;
@@ -597,7 +628,7 @@ export default function Lab({
       );
     if (!previous) patch(id, initialProgress(missionById(id)!));
     setModal(null);
-    navigate("work");
+    navigate("work", mode, id);
   }
   function focusPracticeLine() {
     const needle = mission.practice?.focus;
@@ -838,7 +869,7 @@ export default function Lab({
     analytics.client.current?.pause();
     if (await persistence.current?.remove()) {
       setModal(null);
-      navigate("home");
+      navigate("home", "replace");
       void analytics.client.current?.load();
       toast("서버와 이 기기의 체험 기록을 삭제했어요.");
     }
