@@ -302,6 +302,7 @@ export default function Lab({
   });
   const analytics = useAnalytics(saveStatus.phase !== "loading");
   const persistence = useRef<ReturnType<typeof createPersistence> | null>(null);
+  const executionEpoch = useRef(0);
   const editor = useRef<HTMLTextAreaElement | null>(null);
   const ready = saveStatus.ready;
   const deleting = saveStatus.phase === "deleting";
@@ -406,6 +407,10 @@ export default function Lab({
     coachController.current = null;
     setAsking(false);
   }
+  function cancelExecution() {
+    executionEpoch.current += 1;
+    setRunning(false);
+  }
   function toast(message: string) {
     setNotice(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -444,6 +449,7 @@ export default function Lab({
     const onStorage = (e: StorageEvent) => {
       if ((e.key === DRAFT_KEY && e.newValue === null) || e.key === null) {
         cancelCoach();
+        cancelExecution();
         controller.externalReset();
         setModal(null);
       }
@@ -458,6 +464,8 @@ export default function Lab({
     return () => {
       alive = false;
       controller.dispose();
+      executionEpoch.current += 1;
+      if (toastTimer.current) clearTimeout(toastTimer.current);
       window.removeEventListener("storage", onStorage);
       coachEpoch.current += 1;
       coachController.current?.abort();
@@ -608,6 +616,7 @@ export default function Lab({
   }
   async function execute() {
     if (running || unavailableContent) return;
+    const epoch = ++executionEpoch.current;
     setRunning(true);
     const code = progress.code;
     const executedAt = new Date().toISOString();
@@ -617,6 +626,7 @@ export default function Lab({
       code,
       active === "frontend" ? [events, category, availableOnly] : undefined,
     );
+    if (epoch !== executionEpoch.current) return;
     const lastExecution = await snapshotExecution(
       progress,
       mission,
@@ -626,6 +636,7 @@ export default function Lab({
         ? [events, category, availableOnly]
         : mission.previewArgs,
     );
+    if (epoch !== executionEpoch.current) return;
     analytics.client.current?.track(
       "run_result",
       {
@@ -817,6 +828,7 @@ export default function Lab({
   }
   async function erase() {
     cancelCoach();
+    cancelExecution();
     analytics.client.current?.pause();
     if (await persistence.current?.remove()) {
       setModal(null);
