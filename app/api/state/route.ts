@@ -1,4 +1,6 @@
 import { keepsStartedVersions } from "../../../lib/lab-state";
+import { storageDates } from "../../../lib/retention";
+import { RecordDeleted } from "../../../lib/storage";
 import {
   getStorage,
   identity,
@@ -15,7 +17,12 @@ export async function GET(req: Request) {
     const store = await getStorage();
     const saved = await store.read(id.key);
     return json(
-      { state: saved ? stateSchema.parse(saved.state) : null },
+      {
+        state: saved ? stateSchema.parse(saved.state) : null,
+        ...(saved
+          ? storageDates(saved.updatedAt)
+          : { savedAt: null, expiresAt: null }),
+      },
       200,
       id.cookie ? { "Set-Cookie": id.cookie } : {},
     );
@@ -32,7 +39,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   if (!sameOrigin(req))
     return json({ error: "같은 페이지에서 다시 시도해주세요." }, 403);
-  const id = identity(req);
+  const id = identity(req, false, true);
   let state;
   try {
     state = stateSchema.parse(await readBody(req));
@@ -50,13 +57,22 @@ export async function POST(req: Request) {
         },
         409,
       );
-    await store.save(id.key, state);
+    const timestamp = await store.save(id.key, state);
     return json(
-      { savedAt: new Date().toISOString() },
+      storageDates(timestamp),
       200,
       id.cookie ? { "Set-Cookie": id.cookie } : {},
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof RecordDeleted)
+      return json(
+        {
+          code: "RECORD_DELETED",
+          error:
+            "삭제된 기록에는 다시 저장할 수 없어요. 새로고침해 새 체험을 시작해주세요.",
+        },
+        409,
+      );
     return json(
       { error: "저장하지 못했어요. 연결 후 다시 시도해주세요." },
       503,
@@ -68,7 +84,9 @@ export async function DELETE(req: Request) {
     return json({ error: "같은 페이지에서 다시 시도해주세요." }, 403);
   try {
     await (await getStorage()).remove(identity(req).key);
-    return json({ deleted: true });
+    return json({ deleted: true }, 200, {
+      "Set-Cookie": identity(req, true).cookie,
+    });
   } catch {
     return json(
       { error: "기록을 삭제하지 못했어요. 연결 후 다시 시도해주세요." },

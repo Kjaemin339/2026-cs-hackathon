@@ -80,3 +80,14 @@ test("server state preserves all six role records", () => {
     ),
   );
 });
+
+test("successful-save identity renewal retains the owner; deletion rotates it", () => {
+  const first = identity(new Request("https://lab.example"));
+  const req = new Request("https://lab.example", {
+    headers: { Cookie: first.cookie.split(";")[0] },
+  });
+  const renewed = identity(req, false, true);
+  assert.equal(renewed.key, first.key);
+  assert.match(renewed.cookie, /Max-Age=2592000/);
+  assert.notEqual(identity(req, true).key, first.key);
+});

@@ -184,7 +184,7 @@ export function sameOrigin(req: Request) {
     return false;
   }
 }
-export function identity(req: Request) {
+export function identity(req: Request, rotate = false, renew = false) {
   // Vercel does not authenticate the Sites headers. Never trust them as identity.
   const secure = process.env.NODE_ENV === "production";
   const name = secure ? "__Host-lab_session" : "lab_session";
@@ -195,6 +195,7 @@ export function identity(req: Request) {
     .find((x) => x.startsWith(name + "="))
     ?.slice(name.length + 1);
   const valid =
+    !rotate &&
     raw &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
       raw,
@@ -202,9 +203,10 @@ export function identity(req: Request) {
   const id = valid ? raw : crypto.randomUUID();
   return {
     key: "guest:" + id,
-    cookie: valid
-      ? ""
-      : `${name}=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure ? "; Secure" : ""}`,
+    cookie:
+      valid && !renew
+        ? ""
+        : `${name}=${id}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure ? "; Secure" : ""}`,
   };
 }
 export async function readBody(req: Request, limit = 100000) {

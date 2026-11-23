@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   FlaskConical,
@@ -52,7 +53,6 @@ import {
   changeCode,
   currentExecution,
   isCompleted,
-  normalizeLabState,
   normalizeProfile,
   profileAnswer,
   profileAnswerLabel,
@@ -68,9 +68,14 @@ import {
 } from "../lib/next-actions";
 import { requestCoach } from "../lib/coach-request";
 import { DeadlineExceeded } from "../lib/async-deadline";
+import {
+  createPersistence,
+  DRAFT_KEY,
+  hasWork,
+  type SaveStatus,
+} from "../lib/persistence";
 
 type View = "home" | "work" | "journal" | "compare" | "guide";
-const KEY = "haebogi-lab-v1";
 const icons = {
   frontend: LayoutTemplate,
   backend: Braces,
@@ -275,9 +280,35 @@ function ProfileQuestions({
 export default function Lab() {
   const [view, setView] = useState<View>("home"),
     [state, setState] = useState<LabState>(emptyState),
-    [ready, setReady] = useState(false),
-    [save, setSave] = useState("불러오는 중"),
     [notice, setNotice] = useState("");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({
+    phase: "loading",
+    ready: false,
+    localSaved: false,
+    savedAt: null,
+    expiresAt: null,
+    message: "",
+  });
+  const persistence = useRef<ReturnType<typeof createPersistence> | null>(null);
+  const ready = saveStatus.ready;
+  const deleting = saveStatus.phase === "deleting";
+  const saveLabel = {
+    loading: "불러오는 중",
+    idle: "새 체험",
+    saving: "저장 중",
+    saved: "저장됨",
+    error: "저장 실패",
+    recovery: "초안 확인",
+    conflict: "기록 확인 필요",
+    deleting: "삭제 중",
+  }[saveStatus.phase];
+  const formatTime = (value: string) =>
+    new Date(value).toLocaleString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   const [active, setActive] = useState<TrackId>("frontend"),
     [modal, setModal] = useState<
       "reflection" | "reset" | "delete" | "solution" | null
@@ -307,8 +338,6 @@ export default function Lab() {
   const [selectedNextId, setSelectedNextId] = useState("");
   const [nextReason, setNextReason] = useState("");
   const latest = useRef(state),
-    saveChain = useRef(Promise.resolve()),
-    saveEpoch = useRef(0),
     coachEpoch = useRef(0),
     coachController = useRef<AbortController | null>(null),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -367,43 +396,29 @@ export default function Lab() {
   }
   useEffect(() => {
     let alive = true;
-    const cached = () => {
-      try {
-        const x = JSON.parse(localStorage.getItem(KEY) ?? "null");
-        return x?.version === 1 && x.progress ? (x as LabState) : null;
-      } catch {
-        return null;
+    const controller = createPersistence({
+      storage: {
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value),
+        removeItem: (key) => localStorage.removeItem(key),
+      },
+      onState: (next) => {
+        if (alive) setState(next);
+      },
+      onStatus: (next) => {
+        if (alive) setSaveStatus(next);
+      },
+    });
+    persistence.current = controller;
+    void controller.load();
+    const onStorage = (e: StorageEvent) => {
+      if ((e.key === DRAFT_KEY && e.newValue === null) || e.key === null) {
+        cancelCoach();
+        controller.externalReset();
+        setModal(null);
       }
     };
-    const local = cached();
-    if (local) setState(normalizeLabState(local));
-    fetch("/api/state", { signal: AbortSignal.timeout(6000) })
-      .then((r) => {
-        if (!r.ok) throw new Error();
-        return r.json() as Promise<{ state: LabState | null }>;
-      })
-      .then((data) => {
-        if (!alive) return;
-        const remote = data.state ? normalizeLabState(data.state) : null;
-        if (remote?.version === 1) {
-          const merged = { ...remote, progress: { ...remote.progress } };
-          for (const m of missions) {
-            const a = local?.progress[m.id],
-              b = remote.progress[m.id];
-            if (a && (!b || a.updatedAt > b.updatedAt))
-              merged.progress[m.id] = a;
-          }
-          if (local?.profile) merged.profile = normalizeProfile(local.profile);
-          setState(normalizeLabState(merged));
-        }
-        setSave("저장됨");
-      })
-      .catch(() => {
-        if (alive) setSave("기기에 저장");
-      })
-      .finally(() => {
-        if (alive) setReady(true);
-      });
+    window.addEventListener("storage", onStorage);
     fetch("/api/coach")
       .then((r) => r.json() as Promise<{ available: boolean }>)
       .then((d) => {
@@ -412,57 +427,22 @@ export default function Lab() {
       .catch(() => {});
     return () => {
       alive = false;
+      controller.dispose();
+      window.removeEventListener("storage", onStorage);
       coachEpoch.current += 1;
       coachController.current?.abort();
     };
   }, []);
   useEffect(() => {
-    if (!ready) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state));
-    } catch {
-      setSave("저장 공간 부족");
-    }
-    setSave("저장 중");
-    const snapshot = state,
-      epoch = saveEpoch.current;
-    const timer = setTimeout(() => {
-      saveChain.current = saveChain.current
-        .catch(() => {})
-        .then(async () => {
-          if (epoch !== saveEpoch.current) return;
-          try {
-            const r = await fetch("/api/state", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(snapshot),
-              signal: AbortSignal.timeout(8000),
-            });
-            if (r.status === 409) {
-              if (latest.current === snapshot) {
-                setSave("과제 기준 확인 필요");
-                toast(
-                  "시작한 과제 기준이 달라 서버에 덮어쓰지 않았어요. 기록을 내려받고 새로고침해주세요.",
-                );
-              }
-              return;
-            }
-            if (!r.ok) throw new Error();
-            if (latest.current === snapshot) setSave("저장됨");
-          } catch {
-            if (latest.current === snapshot) setSave("기기에 저장");
-          }
-        });
-    }, 900);
-    return () => clearTimeout(timer);
-  }, [state, ready]);
+    persistence.current?.stage(state);
+  }, [state]);
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !asking) setModal(null);
+      if (e.key === "Escape" && !asking && !deleting) setModal(null);
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [asking]);
+  }, [asking, deleting]);
   useEffect(() => {
     if (!modal) return;
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
@@ -624,7 +604,11 @@ export default function Lab() {
         },
         {
           state: latest.current,
-          waitForSave: saveChain.current,
+          waitForSave: Promise.resolve(),
+          saveState: (signal) => {
+            persistence.current!.stage(latest.current);
+            return persistence.current!.saveNow(signal);
+          },
           signal: controller.signal,
         },
       );
@@ -729,22 +713,11 @@ export default function Lab() {
     URL.revokeObjectURL(url);
   }
   async function erase() {
-    try {
-      cancelCoach();
-      saveEpoch.current += 1;
-      await saveChain.current;
-      const r = await fetch("/api/state", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!r.ok) throw new Error();
-      localStorage.removeItem(KEY);
-      setState(emptyState());
+    cancelCoach();
+    if (await persistence.current?.remove()) {
       setModal(null);
       navigate("home");
-      toast("나의 체험 기록을 삭제했어요.");
-    } catch {
-      toast("서버 기록을 삭제하지 못했어요. 연결 후 다시 시도해주세요.");
+      toast("서버와 이 기기의 체험 기록을 삭제했어요.");
     }
   }
   const passed = progress.result?.tests.filter((t) => t.passed).length ?? 0;
@@ -793,24 +766,107 @@ export default function Lab() {
             <button className="guide-link" onClick={() => navigate("guide")}>
               <HelpCircle size={17} /> 도움말
             </button>
-            <span className="save-state" aria-live="polite">
-              {save === "기기에 저장" ? (
+            <span
+              className={`save-state ${saveStatus.phase}`}
+              aria-live="polite"
+              title={
+                saveStatus.savedAt
+                  ? `마지막 서버 저장 ${formatTime(saveStatus.savedAt)}`
+                  : "아직 서버에 저장한 기록이 없어요"
+              }
+            >
+              {saveStatus.phase === "error" ||
+              saveStatus.phase === "conflict" ? (
                 <CloudOff size={15} />
               ) : (
                 <Cloud size={15} />
               )}
-              <span>{save}</span>
+              <span>{saveLabel}</span>
+              {saveStatus.savedAt && (
+                <time dateTime={saveStatus.savedAt}>
+                  {formatTime(saveStatus.savedAt)}
+                </time>
+              )}
             </span>
           </div>
         </div>
       </header>
-      {!ready && (
+      <div className={`mobile-save-state ${saveStatus.phase}`} role="status">
+        <span>{saveLabel}</span>
+        {saveStatus.savedAt && (
+          <time dateTime={saveStatus.savedAt}>
+            마지막 서버 저장 {formatTime(saveStatus.savedAt)}
+          </time>
+        )}
+      </div>
+      {saveStatus.phase === "loading" && (
         <div className="loading-strip" role="status">
           체험 기록을 불러오고 있어요.
         </div>
       )}
+      {["error", "recovery", "conflict"].includes(saveStatus.phase) && (
+        <section className="storage-banner" aria-label="기록 저장 안내">
+          <div role="status">
+            <strong>{saveStatus.message}</strong>
+            <p>
+              {saveStatus.localSaved
+                ? "이 브라우저에 초안을 보관하고 있어요."
+                : hasWork(state)
+                  ? "기기 초안을 저장하지 못했어요. 기록을 내려받아 보관해주세요."
+                  : "이 브라우저에 보관된 초안은 없어요."}
+            </p>
+          </div>
+          <div className="storage-actions">
+            {saveStatus.phase === "recovery" ? (
+              <button
+                className="btn primary compact"
+                onClick={() => void persistence.current?.restore()}
+              >
+                초안 복구해 저장
+              </button>
+            ) : saveStatus.phase === "conflict" ? (
+              <button
+                className="btn secondary compact"
+                onClick={() => location.reload()}
+              >
+                새로고침
+              </button>
+            ) : (
+              <button
+                className="btn primary compact"
+                onClick={() => void persistence.current?.retry()}
+              >
+                다시 시도
+              </button>
+            )}
+            <button className="btn secondary compact" onClick={download}>
+              기록 내려받기
+            </button>
+            {saveStatus.phase === "recovery" && (
+              <button
+                className="danger-link"
+                onClick={() => setModal("delete")}
+              >
+                초안 버리고 새로 시작
+              </button>
+            )}
+          </div>
+        </section>
+      )}
+      {!saveStatus.localSaved &&
+        ["saving", "saved"].includes(saveStatus.phase) && (
+          <div className="storage-banner" role="status">
+            기기 저장 공간이 부족해 초안을 보관하지 못했어요.{" "}
+            {saveStatus.phase === "saved"
+              ? "서버 기록은 저장됐어요."
+              : "창을 닫기 전 저장 완료를 확인하거나 기록을 내려받아주세요."}
+            <button className="btn secondary compact" onClick={download}>
+              기록 내려받기
+            </button>
+          </div>
+        )}
       {view === "home" && (
-        <main className="home wrap">
+        <main inert={!ready} className="home wrap">
           <section className="welcome">
             <div>
               <p className="welcome-kicker">개발 직무 맛보기</p>
@@ -822,16 +878,18 @@ export default function Lab() {
               <p className="welcome-description">
                 설치 없이 작은 업무 하나로 시작해요.
               </p>
-              <button
-                className="btn primary"
-                disabled={
-                  !ready ||
-                  (!state.progress.frontend && !canStartMission("frontend"))
-                }
-                onClick={() => start("frontend")}
-              >
-                처음이라면 화면 만들기 <ArrowUpRight size={18} />
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  className="btn primary"
+                  disabled={!ready}
+                  onClick={() => start("frontend")}
+                >
+                  처음이라면 화면 만들기 <ArrowUpRight size={18} />
+                </button>
+                <Link className="btn soft" href="/games">
+                  게임으로 배우기 <ArrowUpRight size={18} />
+                </Link>
+              </div>
             </div>
             <button
               className="featured-task"
@@ -945,7 +1003,7 @@ export default function Lab() {
         </main>
       )}
       {view === "work" && unavailableContent && (
-        <main className="wrap records-page">
+        <main inert={!ready} className="wrap records-page">
           <button className="btn secondary" onClick={() => navigate("home")}>
             체험실로
           </button>
@@ -972,7 +1030,7 @@ export default function Lab() {
         </main>
       )}
       {view === "work" && !unavailableContent && (
-        <main className="work wrap">
+        <main inert={!ready} className="work wrap">
           <div className="work-heading">
             <div>
               <button className="back-link" onClick={() => navigate("home")}>
@@ -1070,7 +1128,9 @@ export default function Lab() {
                     aria-label="코드 다운로드"
                     onClick={() => {
                       const u = URL.createObjectURL(
-                        new Blob([progress.code], { type: "text/javascript" }),
+                        new Blob([progress.code], {
+                          type: "text/javascript",
+                        }),
                       );
                       const a = document.createElement("a");
                       a.href = u;
@@ -1529,7 +1589,7 @@ export default function Lab() {
         </main>
       )}
       {view === "journal" && (
-        <main className="wrap records-page">
+        <main inert={!ready} className="wrap records-page">
           <div className="page-intro">
             <span className="context-tag">
               <BookOpen size={16} /> 나의 기록
@@ -1640,10 +1700,35 @@ export default function Lab() {
           <section className="record-settings">
             <div>
               <h2>체험 기록 관리</h2>
-              <p>
-                서버 기록은 마지막 저장 후 30일이 지나면 다음 접속이나 저장 시
-                삭제돼요. 기기 초안은 직접 지울 수 있어요.
+              <p role="status">
+                {saveLabel}
+                {saveStatus.savedAt
+                  ? ` · 마지막 서버 저장 ${formatTime(saveStatus.savedAt)}`
+                  : " · 아직 서버 저장 기록이 없어요"}
               </p>
+              {saveStatus.expiresAt && (
+                <p>
+                  서버 보관 기한 {formatTime(saveStatus.expiresAt)} · 수정해서
+                  저장하면 30일 연장돼요.
+                </p>
+              )}
+              <details className="retention-details">
+                <summary>보관·삭제 안내</summary>
+                <p>
+                  서버 체험 기록과 AI 호출 정보는 30일 보관해요. 만료된 자료는
+                  매일 정리하며, 기한이 지난 체험 기록은 불러오지 않아요.
+                </p>
+                <p>
+                  기기 초안은 이 브라우저에 남아요. 서버 기록이 없으면 자동으로
+                  다시 올리지 않고 복구할지 물어봐요. 브라우저 데이터를 지우면
+                  초안과 이어하기 정보도 사라져요.
+                </p>
+                <p>
+                  전체 삭제는 코드·회고·사전 응답·AI 호출 정보를 지워요. 재저장
+                  방지용 익명 표시만 30일, 오늘의 AI 사용 횟수는 하루 동안
+                  유지해요.
+                </p>
+              </details>
             </div>
             <div>
               <button className="btn secondary compact" onClick={download}>
@@ -1660,7 +1745,7 @@ export default function Lab() {
         </main>
       )}
       {view === "compare" && (
-        <main className="wrap compare-page">
+        <main inert={!ready} className="wrap compare-page">
           <div className="page-intro">
             <span className="context-tag">
               <ChartNoAxesCombined size={16} /> 비교하기
@@ -1798,7 +1883,7 @@ export default function Lab() {
         </main>
       )}
       {view === "guide" && (
-        <main className="wrap guide-page">
+        <main inert={!ready} className="wrap guide-page">
           <div className="page-intro">
             <span className="context-tag">
               <HelpCircle size={16} /> 도움말
@@ -1837,8 +1922,10 @@ export default function Lab() {
               <p>
                 서버에 저장하고, 연결이 끊기면 이 브라우저에 초안을 보관해요.
                 브라우저 쿠키로 기록을 구분해 같은 브라우저에서 이어할 수
-                있어요. 다른 기기와 동기화되지는 않아요. 마지막 저장 후 30일이
-                지난 서버 기록은 접속이나 저장 시 정리해요.
+                있어요. 다른 기기와 동기화되지는 않아요. 마지막 서버 저장부터
+                30일이 지나면 기록을 불러오지 않고 매일 정리해요. 서버 기록이
+                사라져도 기기 초안은 자동으로 다시 올리지 않아요. 초안 복구를
+                선택하면 새로 30일 보관해요.
               </p>
               <h2>AI는 어떻게 사용하나요?</h2>
               <p>
@@ -1906,7 +1993,7 @@ export default function Lab() {
         <div
           className="modal-overlay"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setModal(null);
+            if (e.target === e.currentTarget && !deleting) setModal(null);
           }}
         >
           <section
@@ -1917,6 +2004,7 @@ export default function Lab() {
           >
             <button
               className="modal-close"
+              disabled={deleting}
               aria-label="닫기"
               onClick={() => setModal(null)}
             >
@@ -2105,20 +2193,29 @@ export default function Lab() {
             )}
             {modal === "delete" && (
               <>
+                {saveStatus.phase === "error" && (
+                  <p role="alert">{saveStatus.message}</p>
+                )}
                 <h2 id="modal-title">모든 체험 기록을 삭제할까요?</h2>
                 <p>
-                  서버와 이 기기에 저장한 코드, 회고, 사전 질문 응답을 삭제해요.
-                  삭제한 기록은 복구할 수 없어요.
+                  서버와 이 기기의 코드, 회고, 사전 질문 응답, AI 호출 정보를
+                  삭제해요. 삭제한 기록은 복구할 수 없어요. 재저장 방지용 익명
+                  표시와 오늘의 AI 사용 횟수는 잠시 유지해요.
                 </p>
                 <div className="modal-actions">
                   <button
                     className="btn secondary"
+                    disabled={deleting}
                     onClick={() => setModal(null)}
                   >
                     취소
                   </button>
-                  <button className="btn danger" onClick={erase}>
-                    전체 기록 삭제
+                  <button
+                    className="btn danger"
+                    onClick={erase}
+                    disabled={deleting}
+                  >
+                    {deleting ? "삭제 중…" : "전체 기록 삭제"}
                   </button>
                 </div>
               </>
