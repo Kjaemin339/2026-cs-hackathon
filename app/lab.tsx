@@ -48,6 +48,7 @@ import {
 } from "../lib/missions";
 import { missionForProgress } from "../lib/mission-catalog";
 import { runMission } from "../lib/runner";
+import { describeResult, describeInput } from "../lib/check-explanation";
 import {
   canRecordAttempt,
   changeCode,
@@ -290,6 +291,7 @@ export default function Lab() {
     message: "",
   });
   const persistence = useRef<ReturnType<typeof createPersistence> | null>(null);
+  const editor = useRef<HTMLTextAreaElement | null>(null);
   const ready = saveStatus.ready;
   const deleting = saveStatus.phase === "deleting";
   const saveLabel = {
@@ -529,6 +531,26 @@ export default function Lab() {
     setModal(null);
     navigate("work");
   }
+  function focusPracticeLine() {
+    const needle = mission.practice?.focus;
+    const index = needle ? progress.code.indexOf(needle) : -1;
+    if (index < 0 || !editor.current) {
+      toast("안내한 줄이 이미 바뀌었어요. 실행해서 결과를 확인해보세요.");
+      return;
+    }
+    const start = progress.code.lastIndexOf("\n", index) + 1;
+    const end = progress.code.indexOf("\n", index);
+    editor.current.focus();
+    editor.current.setSelectionRange(
+      start,
+      end < 0 ? progress.code.length : end,
+    );
+    editor.current.scrollTop = Math.max(
+      0,
+      progress.code.slice(0, start).split("\n").length * 23 -
+        editor.current.clientHeight / 2,
+    );
+  }
   async function execute() {
     if (running || unavailableContent) return;
     setRunning(true);
@@ -554,7 +576,7 @@ export default function Lab() {
       runs: progress.runs + 1,
     });
     setRunning(false);
-    if (result.error) setTab("tests");
+    if (result.error || result.tests.some((t) => !t.passed)) setTab("tests");
     else if (result.tests.every((t) => t.passed))
       toast(
         "모든 확인 항목을 통과했어요. 어떤 과정이 재미있었는지 기록해보세요.",
@@ -899,7 +921,8 @@ export default function Lab() {
               onClick={() => start("ai")}
             >
               <div className="featured-label">
-                <BrainCircuit size={18} /> 오늘의 다른 선택 <span>20분</span>
+                <BrainCircuit size={18} /> 오늘의 다른 선택{" "}
+                <span>{missionById("ai")!.time}</span>
               </div>
               <Mini id="ai" />
               <div className="featured-bottom">
@@ -1085,7 +1108,33 @@ export default function Lab() {
                   </p>
                 )}
               </details>
-              <h2>완성할 조건</h2>
+              {mission.practice && (
+                <section className="practice-start" aria-label="처음 시작 안내">
+                  <h2>한 줄부터 바꿔봐요</h2>
+                  <p>{mission.practice.firstAction}</p>
+                  <div className="practice-example">
+                    <span>예를 들어</span>
+                    <p>{mission.practice.example.input}</p>
+                    <strong>{mission.practice.example.outcome}</strong>
+                  </div>
+                  <button
+                    className="btn secondary compact"
+                    onClick={focusPracticeLine}
+                  >
+                    바꿀 줄 찾기
+                  </button>
+                  {progress.runs === 0 && (
+                    <button
+                      className="solution-link"
+                      onClick={execute}
+                      disabled={running}
+                    >
+                      먼저 그대로 실행해보기
+                    </button>
+                  )}
+                </section>
+              )}
+              <h2>확인할 상황</h2>
               <ol className="checklist">
                 {mission.steps.map((step, i) => (
                   <li key={step}>
@@ -1098,15 +1147,16 @@ export default function Lab() {
                 <summary>문법이 가물가물한가요?</summary>
                 <p>작은 예제로 필요한 문법부터 확인해보세요.</p>
                 <pre>
-                  {active === "frontend"
-                    ? "const numbers = [1, 2, 3];\nconst bigger = numbers.filter(n => n > 1);\n// [2, 3]"
-                    : active === "backend"
-                      ? "if (names.includes('mina')) {\n  return { accepted: false };\n}\n// 배열에 값이 있는지 확인해요."
-                      : active === "security"
-                        ? "if (!user) return 401;\nconst isOwner = user.id === record.ownerId;"
-                        : active === "cloud"
-                          ? "const errorRate = errors / requests;\n// 2%는 0.02예요.\nif (slow || failing) return 'rollback';"
-                          : "const unique = new Set();\nunique.add('개발:a');\nunique.has('개발:a'); // true"}
+                  {mission.practice?.primer ??
+                    (active === "frontend"
+                      ? "const numbers = [1, 2, 3];\nconst bigger = numbers.filter(n => n > 1);\n// [2, 3]"
+                      : active === "backend"
+                        ? "if (names.includes('mina')) {\n  return { accepted: false };\n}\n// 배열에 값이 있는지 확인해요."
+                        : active === "security"
+                          ? "if (!user) return 401;\nconst isOwner = user.id === record.ownerId;"
+                          : active === "cloud"
+                            ? "const errorRate = errors / requests;\n// 2%는 0.02예요.\nif (slow || failing) return 'rollback';"
+                            : "const unique = new Set();\nunique.add('개발:a');\nunique.has('개발:a'); // true")}
                 </pre>
               </details>
               <button
@@ -1157,6 +1207,7 @@ export default function Lab() {
                   ))}
                 </div>
                 <textarea
+                  ref={editor}
                   aria-label="미션 코드 편집기"
                   spellCheck={false}
                   autoCapitalize="off"
@@ -1406,6 +1457,11 @@ export default function Lab() {
                         <details
                           key={i}
                           className={test.passed ? "pass" : "fail"}
+                          open={
+                            !test.passed &&
+                            i ===
+                              progress.result!.tests.findIndex((t) => !t.passed)
+                          }
                         >
                           <summary>
                             {test.passed ? (
@@ -1418,21 +1474,32 @@ export default function Lab() {
                             <ChevronRight size={15} />
                           </summary>
                           <p>{test.why}</p>
+                          <span className="test-caption">이 상황의 입력</span>
+                          <p>{describeInput(mission, i)}</p>
                           {test.error ? (
                             <pre>{test.error}</pre>
                           ) : (
                             <>
                               <span className="test-caption">기대 결과</span>
-                              <pre>
-                                {JSON.stringify(test.expected, null, 2)}
-                              </pre>
+                              <pre>{describeResult(active, test.expected)}</pre>
                               <span className="test-caption">나의 결과</span>
-                              <pre>
-                                {JSON.stringify(test.actual, null, 2) ??
-                                  "undefined"}
-                              </pre>
+                              <pre>{describeResult(active, test.actual)}</pre>
                             </>
                           )}
+                          <details className="check-raw">
+                            <summary>입력·반환값 자세히</summary>
+                            <pre>
+                              {JSON.stringify(
+                                {
+                                  input: mission.tests[i]?.args,
+                                  expected: test.expected,
+                                  actual: test.actual,
+                                },
+                                null,
+                                2,
+                              )}
+                            </pre>
+                          </details>
                         </details>
                       ))}
                     </div>

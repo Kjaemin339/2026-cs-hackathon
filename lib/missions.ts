@@ -19,6 +19,12 @@ export type MissionGuide = {
   nextAction: "edit" | "inspect";
 };
 export type Mission = {
+  practice?: {
+    firstAction: string;
+    focus: string;
+    example: { input: string; outcome: string };
+    primer: string;
+  };
   contentVersion: string;
   guides: MissionGuide[];
   id: TrackId;

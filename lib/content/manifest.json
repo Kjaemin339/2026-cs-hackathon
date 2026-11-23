@@ -3,5 +3,10 @@
     "sha256": "0004a429d9104cccde54dfe8eb068ed9126611fd1b6aaea1b27114287b5f8085",
     "semanticSha256": "65a4b5ad51122b5714ab45213fc5fabefc4d450f7f8f51ef5d66f3a91703b026",
     "reviewedAt": "2026-11-23"
+  },
+  "2026-11-23.2": {
+    "sha256": "39c1749dc680b156e9e9037160031a3caa1c990a386898ecb75ce4224b73d071",
+    "semanticSha256": "ff620749dba9cf35581cfb5a5f2e0f2255d8f1256f2e9f765d76769167c1d9d1",
+    "reviewedAt": "2026-11-23"
   }
 }
