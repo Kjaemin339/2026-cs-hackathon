@@ -129,7 +129,9 @@ const taskLabels: Record<TrackId, { title: string; description: string }> = {
 };
 function TrackIcon({ id, size = 22 }: { id: TrackId; size?: number }) {
   const Icon = icons[id];
-  return <Icon size={size} strokeWidth={1.8} />;
+  return (
+    <Icon size={size} strokeWidth={1.8} aria-hidden="true" focusable="false" />
+  );
 }
 function Rating({
   label,
@@ -1007,7 +1009,16 @@ export default function Lab({
           <section className="welcome">
             <h1>어떤 일을 해보고 싶나요?</h1>
             <p className="welcome-description">
-              작은 코드를 바꾸고 실행하며, 궁금했던 직무를 경험해봐요.
+              교내 행사 서비스의 작은 업무로, 궁금했던 직무를 경험해봐요.
+            </p>
+            <ol className="experience-path" aria-label="체험 흐름">
+              <li>업무 해보기</li>
+              <li>흥미·어려움 비교하기</li>
+              <li>다음 학습 고르기</li>
+            </ol>
+            <p className="welcome-prerequisite">
+              JavaScript 기초가 있다면 한 줄 수정부터 시작해요.{" "}
+              <Link href="/games">코드가 낯설면 게임으로 둘러보기</Link>
             </p>
           </section>
           {resumeMission && (
@@ -1053,6 +1064,7 @@ export default function Lab({
                 .filter((m) => group === "all" || trackGroup[m.id] === group)
                 .map((m) => {
                   const p = state.progress[m.id];
+                  const pinnedMission = p ? missionForProgress(m.id, p) : m;
                   return (
                     <article className={`job-card ${m.color}`} key={m.id}>
                       <button
@@ -1080,7 +1092,11 @@ export default function Lab({
                           <h3>{taskLabels[m.id].title}</h3>
                           <p>{taskLabels[m.id].description}</p>
                           <div className="job-bottom">
-                            <span>약 {m.time}</span>
+                            <span>
+                              {pinnedMission
+                                ? `약 ${pinnedMission.time}`
+                                : "과제 시간 미확인"}
+                            </span>
                             <span className="job-link">
                               {p
                                 ? isCompleted(p)
@@ -1945,8 +1961,8 @@ export default function Lab({
                               href={activityHref(selectedActivity(r)!)}
                             >
                               {selectedActivity(r)!.kind === "explore"
-                                ? "추천 직무 체험 시작"
-                                : "다음 활동 안내 열기"}{" "}
+                                ? "선택한 직무 체험하기"
+                                : "선택한 활동 안내 보기"}{" "}
                               <ChevronRight size={16} />
                             </Link>
                           )}
@@ -2190,7 +2206,10 @@ export default function Lab({
                               className="text-button"
                               href={activityHref(selectedActivity(saved)!)}
                             >
-                              다음 활동 열기 <ChevronRight size={16} />
+                              {selectedActivity(saved)!.kind === "explore"
+                                ? "선택한 직무 체험하기"
+                                : "선택한 활동 안내 보기"}{" "}
+                              <ChevronRight size={16} />
                             </Link>
                           )}
                           {saved.nextPlan && (
@@ -2380,6 +2399,13 @@ export default function Lab({
                     high="다시 해보고 싶어요"
                   />
                 </div>
+                <p
+                  className="reflection-context-guide"
+                  id="reflection-context-guide"
+                >
+                  흥미와 어려움은 따로 답해요. 문법이 낯설었는지, 작업의 조건을
+                  판단하는 일이 어려웠는지도 적어주세요.
+                </p>
                 <label className="form-label">
                   {active === "data"
                     ? "눈여겨본 수치와 다음 행사 개선안"
@@ -2387,6 +2413,7 @@ export default function Lab({
                   <textarea
                     rows={3}
                     maxLength={2000}
+                    aria-describedby="reflection-context-guide"
                     value={reflection.note}
                     onChange={(e) =>
                       setReflection((r) => ({ ...r, note: e.target.value }))

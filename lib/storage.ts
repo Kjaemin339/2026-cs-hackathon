@@ -5,12 +5,16 @@ import {
   type AnalyticsStorage,
 } from "./analytics-store.ts";
 import { RETENTION_MS } from "./retention.ts";
+import {
+  createAiBudgetStorage,
+  type AiBudgetStorage,
+} from "./ai-budget-store.ts";
 
 export class RecordDeleted extends Error {}
 export class RecordConflict extends Error {}
 
 type SavedState = { state: LabState; updatedAt: number };
-export interface LabStorage extends AnalyticsStorage {
+export interface LabStorage extends AnalyticsStorage, AiBudgetStorage {
   read(owner: string): Promise<SavedState | null>;
   save(
     owner: string,
@@ -25,6 +29,7 @@ export interface LabStorage extends AnalyticsStorage {
     events: number;
     preferences: number;
     analyticsUsage: number;
+    budgetLedgers: number;
   }>;
   reserve(owner: string, track: string): Promise<boolean>;
   logUsage(entry: {
@@ -46,6 +51,7 @@ export function createStorage(query: Query, now = Date.now): LabStorage {
   const analytics = createAnalyticsStorage(query, now);
   return {
     ...analytics,
+    ...createAiBudgetStorage(query, now),
     async read(owner) {
       const [row] = await query(
         "SELECT state,updated_at FROM lab_states WHERE owner_key=$1",
@@ -118,8 +124,10 @@ export function createStorage(query: Query, now = Date.now): LabStorage {
         [new Date(now()).toISOString().slice(0, 10) + ":"],
       );
       const cleaned = await analytics.cleanupAnalytics();
+      const budgetLedgers = await this.cleanupAiBudget();
       return {
         ...cleaned,
+        budgetLedgers,
         states: states.length,
         calls: calls.length,
         usage: usage.length,
@@ -187,6 +195,7 @@ export async function getStorage(): Promise<LabStorage> {
     "CREATE TABLE IF NOT EXISTS lab_states(owner_key TEXT PRIMARY KEY,state TEXT NOT NULL,updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS ai_usage(key TEXT PRIMARY KEY,count INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS ai_calls(id TEXT PRIMARY KEY,owner_key TEXT NOT NULL,model TEXT NOT NULL,input_tokens INTEGER NOT NULL,output_tokens INTEGER NOT NULL,latency_ms INTEGER NOT NULL,outcome TEXT NOT NULL,created_at INTEGER NOT NULL);",
   );
   db.exec(readFileSync(resolve("migrations/002_analytics.sql"), "utf8"));
+  db.exec(readFileSync(resolve("migrations/003_ai_budget.sql"), "utf8"));
   cached = createStorage(async (text, values) => {
     // SQLite serializes writes; PostgreSQL needs the owner row lock.
     const sqlite = text.replace(/ FOR UPDATE/g, "").replace(/\$\d+/g, "?");

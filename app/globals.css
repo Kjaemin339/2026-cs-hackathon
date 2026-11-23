@@ -3269,3 +3269,50 @@ nav > button.active:after {
     padding: 10px 12px;
   }
 }
+
+/* Explain the choice students are making, without adding a separate onboarding. */
+.experience-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  list-style: decimal inside;
+  margin: 20px 0 0;
+  padding: 0;
+  color: var(--secondary);
+  font-size: 14px;
+}
+.experience-path li::marker {
+  color: var(--blue);
+  font-weight: 650;
+}
+.welcome-prerequisite {
+  margin-top: 14px;
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.welcome-prerequisite a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.reflection-context-guide {
+  margin: 22px 0 0;
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.8;
+}
+@media (max-width: 760px) {
+  .experience-path {
+    gap: 8px 18px;
+    font-size: 13px;
+  }
+  .welcome-prerequisite {
+    font-size: 14px;
+  }
+  .welcome-prerequisite a {
+    display: inline-block;
+    min-height: 36px;
+    padding-block: 4px;
+  }
+}
