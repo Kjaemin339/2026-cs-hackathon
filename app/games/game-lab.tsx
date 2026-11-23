@@ -43,15 +43,8 @@ import s from "./games.module.css";
 import { AnalyticsSettings, useAnalytics } from "../analytics-settings";
 import { GAME_ANALYTICS_VERSION } from "../../lib/analytics-schema";
 import type { TrackId } from "../../lib/missions";
+const DONE_KEY = "games-done-v1";
 const GameCheckContext = createContext<(passed: boolean) => void>(() => {});
-const gameTracks: TrackId[] = [
-  "frontend",
-  "backend",
-  "data",
-  "ai",
-  "security",
-  "cloud",
-];
 
 type PlayProps = { finish: () => void };
 type Step = { label: string; done: boolean };
@@ -517,6 +510,9 @@ function Cloud({ finish }: PlayProps) {
 const games = [
   {
     role: "프론트엔드",
+    track: "frontend" as TrackId,
+    scene: "신청 화면 준비",
+    next: "신청 화면이 열렸어요. 곧 신청이 몰려와요.",
     name: "작은 화면 수리하기",
     intro: "큰 글자로 바꿔보고, 버튼 이름이 끝까지 보이도록 고쳐봐요.",
     learned:
@@ -526,6 +522,9 @@ const games = [
   },
   {
     role: "백엔드",
+    track: "backend" as TrackId,
+    scene: "신청 오픈",
+    next: "표 처리는 안전해졌어요. 그런데 신청이 계속 몰려와요.",
     name: "마지막 표 한 장",
     intro:
       "‘두 사람이 동시에 신청하면?’을 눌러 표가 중복 발급되는 상황부터 봐요.",
@@ -535,25 +534,22 @@ const games = [
     play: Backend,
   },
   {
-    role: "데이터 분석",
-    name: "실제 방문자 세기",
-    intro: "같은 사람의 재입장 기록을 빼서 실제 방문자 수를 찾아봐요.",
+    role: "클라우드/SRE",
+    track: "cloud" as TrackId,
+    scene: "신청 폭주",
+    next: "서비스가 버텼어요. 이제 행사 전날 정리가 남았어요.",
+    name: "신청 대기 줄 없애기",
+    intro: "대기가 남은 창구의 ＋를 눌러 서버를 한 대씩 더 배치해봐요.",
     learned:
-      "기록 수와 사람 수는 다를 수 있어요. 무엇을 한 건으로 셀지 먼저 정하는 일이에요.",
-    icon: ChartColumn,
-    play: Data,
-  },
-  {
-    role: "AI 엔지니어",
-    name: "근거를 보고 답하는 봇",
-    intro: "질문의 ‘이번 주’와 ‘영화제’가 모두 맞는 공지 한 장부터 골라봐요.",
-    learned:
-      "질문에 맞는 자료를 고르고 그 내용과 답변을 대조해야 엉뚱한 안내를 줄일 수 있어요.",
-    icon: BrainCircuit,
-    play: AI,
+      "정해진 자원 안에서 바쁜 곳에 서버를 더 배치하고 대기가 줄었는지 확인하는 일이에요.",
+    icon: Server,
+    play: Cloud,
   },
   {
     role: "보안 엔지니어",
+    track: "security" as TrackId,
+    scene: "행사 전날",
+    next: "권한 정리가 끝났어요. 행사 당일 문의가 들어와요.",
     name: "필요한 문만 열기",
     intro:
       "먼저 모두에게 행사 일정을 열고, 각자의 업무에 필요한 자료만 더 열어요.",
@@ -563,13 +559,28 @@ const games = [
     play: Security,
   },
   {
-    role: "클라우드/SRE",
-    name: "신청 대기 줄 없애기",
-    intro: "대기가 남은 창구의 ＋를 눌러 서버를 한 대씩 더 배치해봐요.",
+    role: "AI 엔지니어",
+    track: "ai" as TrackId,
+    scene: "행사 당일 문의",
+    next: "안내 봇이 정확히 답해요. 입장이 시작돼요.",
+    name: "근거를 보고 답하는 봇",
+    intro: "질문의 ‘이번 주’와 ‘영화제’가 모두 맞는 공지 한 장부터 골라봐요.",
     learned:
-      "정해진 자원 안에서 바쁜 곳에 서버를 더 배치하고 대기가 줄었는지 확인하는 일이에요.",
-    icon: Server,
-    play: Cloud,
+      "질문에 맞는 자료를 고르고 그 내용과 답변을 대조해야 엉뚱한 안내를 줄일 수 있어요.",
+    icon: BrainCircuit,
+    play: AI,
+  },
+  {
+    role: "데이터 분석",
+    track: "data" as TrackId,
+    scene: "입장 후 정산",
+    next: "행사가 끝났어요. 오늘 하루를 함께 운영했어요.",
+    name: "실제 방문자 세기",
+    intro: "같은 사람의 재입장 기록을 빼서 실제 방문자 수를 찾아봐요.",
+    learned:
+      "기록 수와 사람 수는 다를 수 있어요. 무엇을 한 건으로 셀지 먼저 정하는 일이에요.",
+    icon: ChartColumn,
+    play: Data,
   },
 ];
 export default function GameLab() {
@@ -579,16 +590,27 @@ export default function GameLab() {
       analytics.client.current?.track("page_view", { page: "games" });
   }, [analytics.status.token]);
   const [game, setGame] = useState<number | null>(null),
-    [done, setDone] = useState<number[]>([]),
+    [done, setDone] = useState<TrackId[]>([]),
     [won, setWon] = useState(false),
     [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DONE_KEY) ?? "[]");
+      if (Array.isArray(saved))
+        setDone(
+          games.map((g) => g.track).filter((track) => saved.includes(track)),
+        );
+    } catch {}
+  }, []);
   const current = game === null ? null : games[game],
-    Play = current?.play;
+    Play = current?.play,
+    nextIndex = games.findIndex((g) => !done.includes(g.track)),
+    following = game === null ? undefined : games[game + 1];
   const choose = (i: number | null) => {
     if (i === null) analytics.client.current?.end("left");
     else
       analytics.client.current?.begin(
-        gameTracks[i],
+        games[i].track,
         "game",
         GAME_ANALYTICS_VERSION,
         "new",
@@ -597,6 +619,14 @@ export default function GameLab() {
     setWon(false);
     setAttempt((v) => v + 1);
     window.scrollTo({ top: 0, behavior: "instant" });
+  };
+  const markDone = (track: TrackId) => {
+    if (done.includes(track)) return;
+    const next = [...done, track];
+    setDone(next);
+    try {
+      localStorage.setItem(DONE_KEY, JSON.stringify(next));
+    } catch {}
   };
   return (
     <>
@@ -625,23 +655,42 @@ export default function GameLab() {
         <AnalyticsSettings analytics={analytics} />
         {!current && (
           <>
-            <div className={s.catalog}>
+            <ol className={s.catalog}>
               {games.map((g, i) => (
-                <button
-                  key={g.role}
-                  aria-label={`${g.role} 게임 시작`}
-                  onClick={() => choose(i)}
-                >
-                  <g.icon />
-                  <small>{g.role}</small>
-                  <strong>{g.name}</strong>
-                  <span>{done.includes(i) ? "다시 해보기" : "시작하기"} →</span>
-                </button>
+                <li key={g.role}>
+                  <button
+                    aria-label={`${i + 1}번째 장면 ${g.scene}, ${g.role} 게임 시작${i === nextIndex ? ", 다음 추천" : ""}`}
+                    onClick={() => choose(i)}
+                  >
+                    <g.icon />
+                    <small>
+                      {i + 1}. {g.scene} · {g.role}
+                      {i === nextIndex && " · 다음 추천"}
+                    </small>
+                    <strong>{g.name}</strong>
+                    <span>
+                      {done.includes(g.track) ? "다시 해보기" : "시작하기"} →
+                    </span>
+                  </button>
+                </li>
               ))}
-            </div>
+            </ol>
+            {done.length === games.length && (
+              <section className={s.complete} role="status">
+                <Check size={28} />
+                <h2>축제 하루를 함께 운영했어요!</h2>
+                <ul className={s.recap}>
+                  {games.map((g) => (
+                    <li key={g.role}>
+                      <strong>{g.role}</strong> {g.learned}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             <p className={s.footnote}>
-              게임 완료 표시는 이 페이지를 열어둔 동안 유지돼요. 코드 체험
-              기록과는 별개예요.
+              게임 완료 표시는 이 브라우저에만 저장돼요. 코드 체험 기록과는
+              별개예요.
             </p>
           </>
         )}
@@ -655,8 +704,7 @@ export default function GameLab() {
               <Play
                 key={attempt}
                 finish={() => {
-                  if (game !== null && !done.includes(game))
-                    setDone([...done, game]);
+                  if (game !== null) markDone(games[game].track);
                   analytics.client.current?.end("completed");
                   setWon(true);
                   window.scrollTo({ top: 0, behavior: "instant" });
@@ -670,12 +718,24 @@ export default function GameLab() {
             <Check size={28} />
             <h2>직접 해봤어요!</h2>
             <p>{current.learned}</p>
+            <p>{current.next}</p>
             <div className={s.keys}>
+              {following && (
+                <button
+                  className="btn primary"
+                  onClick={() => choose(game! + 1)}
+                >
+                  다음 장면: {following.role}
+                </button>
+              )}
+              <Link className="btn secondary" href="/">
+                코드 체험실에서도 해보기
+              </Link>
               <button className="btn secondary" onClick={() => choose(game)}>
                 한 번 더 해보기
               </button>
-              <button className="btn primary" onClick={() => choose(null)}>
-                다른 직무 고르기
+              <button className="btn secondary" onClick={() => choose(null)}>
+                {done.length === games.length ? "하루 정리 보기" : "목록으로"}
               </button>
             </div>
           </section>
