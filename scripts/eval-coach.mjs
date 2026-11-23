@@ -55,6 +55,10 @@ const implementationPaths = [
   "../lib/coach.ts",
   "../lib/coach-guides.ts",
   "../lib/coach-routing.ts",
+  "../lib/missions.ts",
+  "../lib/mission-catalog.ts",
+  "../lib/content/2026-11-23.1.ts",
+  "../lib/content/manifest.json",
 ];
 const fixturePaths = [
   suite === "original"
@@ -68,6 +72,7 @@ for (const c of cases) {
   const result = await getHint(
     {
       track: c.track,
+      contentVersion: missionById(c.track).contentVersion,
       code: c.code,
       question: c.question,
       level: c.level,
@@ -92,6 +97,7 @@ for (const c of cases) {
     id: c.id,
     repetition: c.repetition,
     intent: result.intent ?? null,
+    contentVersion: result.contentVersion ?? null,
     source: result.source,
     guideId: result.guideId ?? null,
     expectedGuideIds: c.expectedGuideIds,

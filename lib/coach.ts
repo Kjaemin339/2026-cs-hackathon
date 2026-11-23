@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { profileAnswer } from "./lab-state.ts";
 import { abortable, withDeadline, DeadlineExceeded } from "./async-deadline.ts";
-import { missionById } from "./missions.ts";
+import { LEGACY_CONTENT_VERSION } from "./missions.ts";
 import { coachGuides, reportedChecks, requirementId } from "./coach-guides.ts";
 import {
   coachRoutingPolicy,
@@ -9,11 +9,16 @@ import {
   intentLabels,
   resolveCoachSelection,
 } from "./coach-routing.ts";
+import {
+  missionCatalog,
+  type createMissionCatalog,
+} from "./mission-catalog.ts";
 import type { LabStorage } from "./storage.ts";
 
 export const coachInput = z
   .object({
     track: z.enum(["frontend", "backend", "data", "ai", "security", "cloud"]),
+    contentVersion: z.string().min(1).max(80).optional(),
     code: z.string().max(20000),
     level: z.number().int().min(0).max(2),
     question: z.string().trim().min(1).max(600),
@@ -37,7 +42,10 @@ type CoachConfig = {
   fetcher?: typeof fetch;
   signal?: AbortSignal;
   timeoutMs?: number;
+  catalog?: Pick<ReturnType<typeof createMissionCatalog>, "resolve">;
 };
+
+export class MissionContentError extends Error {}
 
 export async function getHint(
   body: CoachInput,
@@ -45,18 +53,35 @@ export async function getHint(
   storage: LabStorage,
   config: CoachConfig,
 ) {
-  const mission = missionById(body.track)!;
+  const version = body.contentVersion ?? LEGACY_CONTENT_VERSION;
+  const mission = (config.catalog ?? missionCatalog).resolve(
+    body.track,
+    version,
+  );
+  if (!mission)
+    throw new MissionContentError(
+      "시작한 과제 버전을 찾을 수 없어요. 기록은 보관하고 있어요.",
+    );
   const guide = (notice: string) => ({
     source: "guide" as const,
     message: mission.hints[body.level],
+    contentVersion: mission.contentVersion,
     notice,
   });
   try {
     return await withDeadline(
       async (signal) => {
+        const saved = await abortable(storage.read(owner), signal);
+        const pinned = saved?.state.progress?.[body.track];
+        if (
+          pinned &&
+          (pinned.contentVersion ?? LEGACY_CONTENT_VERSION) !== version
+        )
+          throw new MissionContentError(
+            "질문한 과제와 저장된 버전이 달라요. 페이지를 새로고침해주세요.",
+          );
         if (!config.apiKey)
           return guide("AI 연결 전이에요. 기본 힌트를 보여드려요.");
-        const saved = await abortable(storage.read(owner), signal);
         if (!saved?.state.profile?.aiConsent)
           return guide("AI 사용에 동의한 뒤 질문해주세요.");
         if (!(await abortable(storage.reserve(owner, body.track), signal)))
@@ -84,6 +109,7 @@ export async function getHint(
               role: "user",
               content: JSON.stringify({
                 track: body.track,
+                contentVersion: mission.contentVersion,
                 ...(profileAnswer(saved.state.profile, "experience")
                   ? {
                       experience: profileAnswer(
@@ -227,6 +253,7 @@ export async function getHint(
               let result: unknown;
               if (call.function.name === "read_mission") {
                 result = {
+                  contentVersion: mission.contentVersion,
                   task: mission.brief,
                   requirements: mission.steps.map((text, i) => ({
                     id: requirementId(mission, i),
@@ -253,6 +280,7 @@ export async function getHint(
                 trace.push("과제 조건 확인");
               } else if (call.function.name === "inspect_checks") {
                 result = {
+                  contentVersion: mission.contentVersion,
                   source: "student_browser_unverified",
                   eligibleCheckIds: eligible,
                   checks,
