@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowUpRight, BookOpen, FlaskConical } from "lucide-react";
+import { ChevronRight, BookOpen, FlaskConical } from "lucide-react";
 import { missions, type NextActionCandidate } from "../../../../lib/missions";
 import { activityLesson } from "../../../../lib/activities";
 
@@ -40,7 +40,8 @@ export default async function Activity({
       <main className="wrap activity-page">
         <div className="page-intro">
           <span className="context-tag">
-            <BookOpen size={16} /> 다음 활동 · {mission.title}
+            <BookOpen size={16} aria-hidden="true" /> 다음 활동 ·{" "}
+            {mission.title}
           </span>
           <h1>{lesson.title}</h1>
           <p>{lesson.explanation}</p>
@@ -70,9 +71,9 @@ export default async function Activity({
         <div className="experience-actions">
           <Link className="btn primary" href={`/?track=${mission.id}`}>
             {kind === "foundation" || kind === "explore"
-              ? "이 직무 코드 체험 열기"
-              : "기존 코드 참고하기"}{" "}
-            <ArrowUpRight size={16} />
+              ? "코드 체험으로 이어가기"
+              : "원래 코드 체험 열기"}{" "}
+            <ChevronRight size={16} aria-hidden="true" />
           </Link>
           <Link className="btn secondary" href="/?view=journal">
             내 기록 다시 보기
