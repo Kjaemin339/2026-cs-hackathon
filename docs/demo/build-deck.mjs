@@ -331,10 +331,19 @@ await shot(
   { left: 850, top: 174, width: 358, height: 448 },
   { left: 0.763, top: 0.562, right: 0.012, bottom: 0.024 },
 );
-note(
+text(
   s,
-  "오른쪽은 이전 버전의 AI 연결 점검 화면이에요. 자유 설명 대신 검수된 힌트를 표시해요.",
+  "ai-budget-evidence",
+  "AI 일 $1 / 월 $10 앱 추정 예약예산 · Neon 동시성 검증 완료\n공급자 청구 상한 보장 아님. 오른쪽은 이전 버전 연결 점검 화면이에요.",
+  72,
+  646,
+  1136,
+  60,
+  14,
+  C.muted,
 );
+s.speakerNotes.text +=
+  "\n호출 전 추정 비용을 예약하고 사용량으로 정산하는 앱 예산은 일 $1·월 $10입니다. 실제 Neon에서 동시 예약·CAS·정산·정리 검증을 마쳤습니다. 최대 예약액 $0.162144가 남은 예산보다 크면 잔액이 있어도 기본 힌트로 전환할 수 있습니다. 공급자 청구 상한이나 원가 최소를 보장하지 않습니다.";
 // 6. Record and evidence
 s = slide(
   "체험 기록으로 다음 일을 골라요",
@@ -360,7 +369,7 @@ await shot(s, "docs/screenshots/redesign/after-compare.jpg", {
 text(
   s,
   "evidence-note",
-  "점수와 문장은 합성 QA 자료예요.\n저장 흐름 개선은 통합 검증 완료, 운영 반영 대기 상태예요.",
+  "점수와 문장은 합성 QA 자료예요.\n통합 단위 테스트 199개 통과 · 저장·AI 예약예산 동시성 검증 완료",
   72,
   646,
   1136,
@@ -369,7 +378,7 @@ text(
   C.muted,
 );
 s.speakerNotes.text +=
-  "\nPR #37 저장 동시성·게임 기록·후속 활동 연결 개선은 develop 822b5ac에 통합했고 177개 테스트·빌드·타입·별도 API 검사를 통과했습니다. 운영 반영은 대기입니다. AI 비용 최종 통합은 검토 중입니다.";
+  "\n저장 동시성·게임 기록·후속 활동과 AI 추정 예약예산을 통합한 코드에서 단위 테스트 199개를 통과했습니다. 저장 API 검증과 실제 Neon 예산 마이그레이션·동시 예약 CAS·정산·정리 검증을 마쳤습니다. 이 검증은 공급자 청구 상한 보장이나 실제 학생 효과 측정이 아닙니다. 운영 배포 상태는 docs/demo/README.md에서 관리합니다.";
 // 7. Editable study result template
 s = slide(
   "학생 3명 예비테스트",
@@ -456,7 +465,7 @@ await (await PresentationFile.exportPptx(p)).save(candidate);
 const skill = process.env.PRESENTATIONS_SKILL_DIR;
 const final = path.join(
   out,
-  process.env.DEMO_PPTX_NAME ?? "haebogi-hackathon-pitch-v4.pptx",
+  process.env.DEMO_PPTX_NAME ?? "haebogi-hackathon-pitch-v5.pptx",
 );
 if (!skill)
   throw new Error("PRESENTATIONS_SKILL_DIR is required for final validation");
