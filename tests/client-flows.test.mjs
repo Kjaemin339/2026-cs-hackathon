@@ -142,7 +142,7 @@ test("code navigation keeps URLs, refresh and back/forward aligned without dupli
   assert.equal(query(), "");
   await f.reload();
   assert.ok(page().classList.contains("home"));
-  await f.click("처음이라면 화면 만들기");
+  await f.click("프론트엔드 이어서 해보기");
   assert.equal(query(), "?track=frontend");
   await f.reload();
   assert.ok(page().classList.contains("work"));
@@ -155,7 +155,7 @@ test("game selection updates the URL and history restores the corresponding game
   });
   const heading = () => f.dom.window.document.querySelector("h1").textContent;
   assert.equal(heading(), "작은 화면 수리하기");
-  await f.click("← 게임 목록");
+  await f.click("직무 목록");
   assert.equal(f.dom.window.location.search, "");
   await f.click("백엔드 게임 시작");
   assert.equal(f.dom.window.location.search, "?track=backend");
@@ -164,11 +164,11 @@ test("game selection updates the URL and history restores the corresponding game
   assert.equal(heading(), "마지막 표 한 장");
   const length = f.dom.window.history.length;
   await f.history("back");
-  assert.equal(heading(), "축제 운영 게임");
+  assert.equal(heading(), "코드 없이 직무 둘러보기");
   await f.history("back");
   assert.equal(heading(), "작은 화면 수리하기");
   await f.history("forward");
-  assert.equal(heading(), "축제 운영 게임");
+  assert.equal(heading(), "코드 없이 직무 둘러보기");
   assert.equal(f.dom.window.history.length, length);
 });
 
@@ -186,7 +186,7 @@ test("reopening a completed game through history reviews its result without a ne
       },
     },
   });
-  await f.click("← 게임 목록");
+  await f.click("직무 목록");
   await f.history("back");
   await f.settle(700);
   assert.equal(f.events.filter((e) => e.name === "mission_start").length, 0);

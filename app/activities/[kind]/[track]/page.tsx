@@ -27,7 +27,10 @@ export default async function Activity({
       <header className="site-header">
         <div className="nav-inner">
           <Link className="brand" href="/">
-            <FlaskConical /> 해보기
+            <span className="brand-mark">
+              <FlaskConical size={23} />
+            </span>
+            <span>해보기</span>
           </Link>
           <Link className="btn secondary compact" href="/?view=journal">
             나의 기록
